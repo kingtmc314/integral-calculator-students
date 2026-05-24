@@ -5,13 +5,10 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================================
-   Design: Dark Academic / Chalkboard
-   Background: #1E2433 (deep blue-slate)
-   Cards: #252D3D
-   Text: #E8DFC8 (warm chalk-white)
-   Accent gold: #D4A843
-   Blue: #6B9BD2
-   Green: #7EC8A4
+   Design: Elegant Calculus / Professional Mathematical Studio
+   Background: ink navy with analytical grid and warm parchment light
+   Cards: translucent theorem panels with subtle gold-blue accents
+   Text: refined ivory for LaTeX-heavy academic readability
    ============================================================ */
 
 @theme inline {
@@ -97,6 +94,7 @@
   body {
     @apply bg-background text-foreground;
     font-family: 'Lora', Georgia, serif;
+    background: #080B13;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -143,10 +141,11 @@
   }
 }
 
-/* ── KaTeX overrides for dark chalkboard theme ── */
+/* ── KaTeX overrides for elegant calculus theme ── */
 .katex {
-  color: #E8DFC8 !important;
-  font-size: 1em;
+  color: #F4EDE0 !important;
+  font-size: 1.02em;
+  letter-spacing: 0.005em;
 }
 .katex-display {
   margin: 0 !important;
@@ -179,13 +178,78 @@ html {
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(212, 168, 67, 0.4);
+  background: rgba(200, 164, 93, 0.45);
 }
 
-/* ── Subtle dot grid texture on cards ── */
+/* ── Elegant calculus visual system ── */
+.calculus-page {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(124, 167, 217, 0.18), transparent 30rem),
+    radial-gradient(circle at 82% 18%, rgba(200, 164, 93, 0.14), transparent 28rem),
+    radial-gradient(circle at 50% 100%, rgba(154, 215, 183, 0.08), transparent 34rem),
+    linear-gradient(135deg, #080B13 0%, #0C1224 45%, #111827 100%);
+}
+.calculus-page::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -2;
+  background-image:
+    linear-gradient(rgba(244, 237, 224, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(244, 237, 224, 0.035) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(circle at center, black 0%, transparent 78%);
+}
+.calculus-page::after {
+  content: "∫  ∂  dx  f'(x)  ∑  ln|x|  e^x  C";
+  position: fixed;
+  top: 8rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1100px, 92vw);
+  pointer-events: none;
+  z-index: -1;
+  color: rgba(244, 237, 224, 0.035);
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: clamp(3rem, 9vw, 8rem);
+  letter-spacing: 0.18em;
+  line-height: 1.45;
+  text-align: center;
+  filter: blur(0.2px);
+}
+.calculus-card {
+  position: relative;
+  overflow: hidden;
+  background-image:
+    linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.018)),
+    radial-gradient(circle at 0% 0%, rgba(200,164,93,0.10), transparent 22rem),
+    radial-gradient(circle at 100% 0%, rgba(124,167,217,0.09), transparent 22rem);
+}
+.calculus-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background-image: radial-gradient(circle, rgba(244,237,224,0.045) 1px, transparent 1px);
+  background-size: 26px 26px;
+  opacity: 0.55;
+}
+.calculus-card > * {
+  position: relative;
+  z-index: 1;
+}
+.formula-surface {
+  background:
+    linear-gradient(180deg, rgba(8, 11, 19, 0.88), rgba(12, 18, 36, 0.88)),
+    linear-gradient(90deg, rgba(200,164,93,0.08), rgba(124,167,217,0.08));
+}
 .dot-grid {
-  background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
-  background-size: 20px 20px;
+  background-image: radial-gradient(circle, rgba(244,237,224,0.045) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
 /* ── Animation utilities ── */
