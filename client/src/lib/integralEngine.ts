@@ -82,13 +82,66 @@ const GREEK_LATEX: Record<string, string> = {
   pi: "\\pi",
 };
 
+function hasTopLevelComma(text: string): boolean {
+  let depth = 0;
+  for (const ch of text) {
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (ch === "," && depth === 0) return true;
+  }
+  return false;
+}
+
+function findMatchingParen(text: string, openIndex: number): number {
+  let depth = 0;
+  for (let i = openIndex; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function convertLogNotation(input: string): string {
+  let out = "";
+  for (let i = 0; i < input.length; i++) {
+    const lower = input.slice(i).toLowerCase();
+    const prev = i > 0 ? input[i - 1] : "";
+    const startsName = !/[A-Za-z]/.test(prev);
+    const isLn = startsName && lower.startsWith("ln") && /^\s*\(/.test(input.slice(i + 2));
+    const isLog = startsName && lower.startsWith("log") && /^\s*\(/.test(input.slice(i + 3));
+    if (!isLn && !isLog) {
+      out += input[i];
+      continue;
+    }
+
+    const nameLength = isLn ? 2 : 3;
+    const afterName = i + nameLength;
+    const openOffset = input.slice(afterName).search(/\(/);
+    const openIndex = afterName + openOffset;
+    const closeIndex = findMatchingParen(input, openIndex);
+    if (openOffset < 0 || closeIndex < 0) {
+      out += input[i];
+      continue;
+    }
+
+    const inside = convertLogNotation(input.slice(openIndex + 1, closeIndex));
+    if (isLn) out += `log(${inside})`;
+    else out += hasTopLevelComma(inside) ? `log(${inside})` : `log(${inside},10)`;
+    i = closeIndex;
+  }
+  return out;
+}
+
 function preprocess(input: string): string {
   const letters = `A-Za-z${GREEK_LOWER}`;
-  return input
+  return convertLogNotation(input)
     .trim()
     .replace(/\u2212/g, "-")
     .replace(/÷/g, "/")
-    .replace(/\bln\s*\(/gi, "log(")
     .replace(/\be\s*\^\s*\(/gi, "exp(")
     .replace(new RegExp(`(\\d)([${letters}])`, "g"), "$1*$2")
     .replace(new RegExp(`([${GREEK_LOWER}])(\\d)`, "g"), "$1*$2")
@@ -99,9 +152,20 @@ function preprocess(input: string): string {
     .replace(/\s+/g, "");
 }
 
+function formatCommonLogTex(tex: string): string {
+  return tex.replace(/\\log_\{10\}\\left\((.*?)\\right\)/g, "\\log\\left($1\\right)");
+}
+
+function formatFunctionPowerTex(tex: string): string {
+  return tex.replace(/\{(\\(?:sin|cos|tan|sec|csc|cot)\\left\((.*?)\\right\))\}\^\{([^{}]+)\}/g, (_match, fnWithArg: string, arg: string, power: string) => {
+    const fn = fnWithArg.match(/^(\\(?:sin|cos|tan|sec|csc|cot))/)?.[1] ?? "";
+    return `${fn}^{${power}}\\left(${arg}\\right)`;
+  });
+}
+
 function toLatex(expr: string): string {
   try {
-    return parse(expr).toTex({ parenthesis: "keep", implicit: "hide" });
+    return formatFunctionPowerTex(formatCommonLogTex(parse(expr).toTex({ parenthesis: "keep", implicit: "hide" })));
   } catch {
     return expr;
   }
@@ -273,7 +337,31 @@ function functionName(node: AnyNode): string | null {
 
 function functionArg(node: AnyNode): AnyNode | null {
   const args = (node as any).args as AnyNode[] | undefined;
-  return args && args.length === 1 ? args[0] : null;
+  return args && args.length >= 1 ? args[0] : null;
+}
+
+function functionArgs(node: AnyNode): AnyNode[] {
+  return ((node as any).args as AnyNode[] | undefined) ?? [];
+}
+
+function isLogFunction(node: AnyNode): boolean {
+  return functionName(node) === "log";
+}
+
+function logBase(node: AnyNode): string | null {
+  if (!isLogFunction(node)) return null;
+  const args = functionArgs(node);
+  if (args.length === 1) return "e";
+  if (args.length === 2) return args[1].toString();
+  return null;
+}
+
+function isNaturalLogNode(node: AnyNode): boolean {
+  return logBase(node) === "e";
+}
+
+function isCommonLogNode(node: AnyNode): boolean {
+  return logBase(node) === "10";
 }
 
 function proportionalTo(expr: string, target: string, ctx: IntegrationContext): string | null {
@@ -606,8 +694,12 @@ function isVariableNode(node: AnyNode, ctx: IntegrationContext): boolean {
   return node.toString() === ctx.variable;
 }
 
-function isLogOfVariable(node: AnyNode, ctx: IntegrationContext): boolean {
-  return functionName(node) === "log" && !!functionArg(node) && isVariableNode(functionArg(node)!, ctx);
+function isNaturalLogOfVariable(node: AnyNode, ctx: IntegrationContext): boolean {
+  return isNaturalLogNode(node) && !!functionArg(node) && isVariableNode(functionArg(node)!, ctx);
+}
+
+function isCommonLogOfVariable(node: AnyNode, ctx: IntegrationContext): boolean {
+  return isCommonLogNode(node) && !!functionArg(node) && isVariableNode(functionArg(node)!, ctx);
 }
 
 function isSqrtOfVariable(node: AnyNode, ctx: IntegrationContext): boolean {
@@ -621,7 +713,7 @@ function isSqrtOfVariable(node: AnyNode, ctx: IntegrationContext): boolean {
 }
 
 function tryTrigLogSubstitution(fn: string, arg: AnyNode, ctx: IntegrationContext): Integrated | null {
-  if ((fn !== "sin" && fn !== "cos") || !isLogOfVariable(arg, ctx)) return null;
+  if ((fn !== "sin" && fn !== "cos") || !isNaturalLogOfVariable(arg, ctx)) return null;
   const v = ctx.variable;
   const vl = variableLatex(v);
   const uLatex = `\\ln ${vl}`;
@@ -812,11 +904,16 @@ function integrateNode(node: AnyNode, ctx: IntegrationContext): Integrated {
         const expDeriv = affineDerivative(exponent, ctx);
         if (expDeriv) {
           const denom = simplifyExpr(`(${expDeriv})*log(${base})`);
+          const naturalExponent = `(${exponent})*log(${base})`;
           return {
             expr: divideExpr(`${base}^(${exponent})`, denom),
-            method: "exponential rule",
-            methodZh: "指數積分法",
-            steps: [`${intLatex(`${base}^(${exponent})`, ctx)}=\\frac{${toLatex(`${base}^(${exponent})`)}}{${toLatex(denom)}}+C`],
+            method: "exponential rule by conversion to base e",
+            methodZh: "轉為自然指數後積分",
+            steps: [
+              `${toLatex(`${base}^(${exponent})`)}=e^{${toLatex(naturalExponent)}}`,
+              `u=${toLatex(naturalExponent)},\\quad du=${toLatex(denom)}\\,${dVar(ctx)}`,
+              `${intLatex(`${base}^(${exponent})`, ctx)}=\\frac{${toLatex(`${base}^(${exponent})`)}}{${toLatex(denom)}}+C`,
+            ],
           };
         }
       }
@@ -870,8 +967,11 @@ function integrateNode(node: AnyNode, ctx: IntegrationContext): Integrated {
         if (fn === "tan") return { expr: simplifyExpr(`-log(abs(cos(${inner})))/(${d})`), method: "trigonometric logarithmic rule", methodZh: "三角對數積分法", steps: [`${intLatex(`tan(${inner})`, ctx)}=-\\frac{1}{${toLatex(d)}}\\ln\\left|\\cos\\left(${toLatex(inner)}\\right)\\right|+C`] };
         if (fn === "exp") return { expr: divideExpr(`exp(${inner})`, d), method: "exponential rule", methodZh: "指數積分法", steps: [`${intLatex(`exp(${inner})`, ctx)}=\\frac{e^{${toLatex(inner)}}}{${toLatex(d)}}+C`] };
         if (fn === "sqrt") return { expr: divideExpr(`(${inner})^(3/2)`, `(${d})*(3/2)`), method: "power rule with affine substitution", methodZh: "一次式代換冪次法則", steps: [`\\sqrt{${toLatex(inner)}}=${toLatex(`(${inner})^(1/2)`)}`, `${intLatex(`(${inner})^(1/2)`, ctx)}=\\frac{${toLatex(`(${inner})^(3/2)`)}}{${toLatex(`(${d})*(3/2)`)}}+C`] };
-        if (fn === "log" && simplifyExpr(inner) === ctx.variable) {
-          return tryLogByParts(ctx);
+        if (fn === "log" && simplifyExpr(inner) === ctx.variable && isNaturalLogNode(node)) {
+          return tryNaturalLogByParts(ctx);
+        }
+        if (fn === "log" && simplifyExpr(inner) === ctx.variable && isCommonLogNode(node)) {
+          return tryCommonLogByParts(ctx);
         }
       }
     }
@@ -935,7 +1035,7 @@ function tryReverseChainFromProduct(factors: AnyNode[], ctx: IntegrationContext)
   return null;
 }
 
-function tryLogByParts(ctx: IntegrationContext): Integrated {
+function tryNaturalLogByParts(ctx: IntegrationContext): Integrated {
   const v = ctx.variable;
   return {
     expr: `${v}*log(${v})-${v}`,
@@ -950,28 +1050,57 @@ function tryLogByParts(ctx: IntegrationContext): Integrated {
   };
 }
 
+function tryCommonLogByParts(ctx: IntegrationContext): Integrated {
+  const v = ctx.variable;
+  const vl = variableLatex(v);
+  return {
+    expr: `${v}*log(${v},10)-${v}/log(10)`,
+    method: "integration by parts with change of base",
+    methodZh: "換底後分部積分法",
+    steps: [
+      `\\log ${vl}=\\frac{\\ln ${vl}}{\\ln 10}`,
+      `u=\\log ${vl},\\quad dv=1\\,${dVar(ctx)}`,
+      `du=\\frac{1}{${vl}\\ln 10}\\,${dVar(ctx)},\\quad v=${vl}`,
+      `${intLatex(`log(${v},10)`, ctx)}=${vl}\\log ${vl}-${intLatex(`1/log(10)`, ctx)}`,
+      `${intLatex(`log(${v},10)`, ctx)}=${vl}\\log ${vl}-\\frac{${vl}}{\\ln 10}+C`,
+    ],
+  };
+}
+
 function tryByParts(factors: AnyNode[], ctx: IntegrationContext): Integrated | null {
   if (factors.length < 2 || ctx.depth > 7) return null;
 
-  const logIndex = factors.findIndex((factor) => functionName(factor) === "log" && functionArg(factor)?.toString() === ctx.variable);
+  const logIndex = factors.findIndex((factor) =>
+    (isNaturalLogOfVariable(factor, ctx) || isCommonLogOfVariable(factor, ctx))
+  );
   if (logIndex >= 0) {
+    const logFactor = factors[logIndex];
+    const isCommon = isCommonLogOfVariable(logFactor, ctx);
     const dvExpr = combineFactors(factors.filter((_, idx) => idx !== logIndex));
     const degree = algebraicDegree(dvExpr, ctx);
     if (degree !== null || dvExpr === "1") {
       const n = degree ?? 0;
       const denom = n + 1;
       const power = `${ctx.variable}^${denom}`;
-      const first = `(${power})*log(${ctx.variable})/${denom}`;
-      const second = `(${power})/(${denom * denom})`;
+      const logExpr = isCommon ? `log(${ctx.variable},10)` : `log(${ctx.variable})`;
+      const first = `(${power})*(${logExpr})/${denom}`;
+      const second = isCommon ? `(${power})/(${denom * denom}*log(10))` : `(${power})/(${denom * denom})`;
       const result = simplifyExpr(`(${first})-(${second})`);
+      const vl = variableLatex(ctx.variable);
+      const logLatex = isCommon ? `\\log ${vl}` : `\\ln ${vl}`;
+      const duLatex = isCommon ? `\\frac{1}{${vl}\\ln 10}` : `\\frac{1}{${vl}}`;
+      const method = isCommon ? "integration by parts with change of base" : "integration by parts";
+      const methodZh = isCommon ? "換底後分部積分法" : "分部積分法";
+      const setup = isCommon ? [`\\log ${vl}=\\frac{\\ln ${vl}}{\\ln 10}`] : [];
       return {
         expr: result,
-        method: "integration by parts",
-        methodZh: "分部積分法",
+        method,
+        methodZh,
         steps: [
-          `u=\\ln ${variableLatex(ctx.variable)},\\quad dv=${toLatex(dvExpr)}\\,${dVar(ctx)}`,
-          `du=\\frac{1}{${variableLatex(ctx.variable)}}\\,${dVar(ctx)},\\quad v=\\frac{${variableLatex(ctx.variable)}^{${denom}}}{${denom}}`,
-          `${intLatex(combineFactors(factors), ctx)}=\\frac{${variableLatex(ctx.variable)}^{${denom}}}{${denom}}\\ln ${variableLatex(ctx.variable)}-${intLatex(`(${ctx.variable}^${denom}/${denom})/${ctx.variable}`, ctx)}`,
+          ...setup,
+          `u=${logLatex},\\quad dv=${toLatex(dvExpr)}\\,${dVar(ctx)}`,
+          `du=${duLatex}\\,${dVar(ctx)},\\quad v=\\frac{${vl}^{${denom}}}{${denom}}`,
+          `${intLatex(combineFactors(factors), ctx)}=\\frac{${vl}^{${denom}}}{${denom}}${logLatex}-${intLatex(isCommon ? `(${ctx.variable}^${denom}/${denom})/(${ctx.variable}*log(10))` : `(${ctx.variable}^${denom}/${denom})/${ctx.variable}`, ctx)}`,
           `${intLatex(combineFactors(factors), ctx)}=${toLatex(result)}+C`,
         ],
       };
@@ -1240,7 +1369,11 @@ export const integralExamples = [
   "sin(θ)",
   "x*sin(x)",
   "x*exp(x)",
+  "x^2*ln(x)",
   "x^2*log(x)",
+  "log(x,2)",
+  "2^x",
+  "10^t",
   "exp(x)*sin(x)",
   "exp(x)*cos(x)",
   "sin(log(x))",
