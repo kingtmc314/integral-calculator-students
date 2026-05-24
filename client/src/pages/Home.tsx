@@ -50,6 +50,14 @@ function alignedLatex(lines: string[]): string {
   return `\\begin{aligned}${lines.map(alignAtEquals).join("\\\\")}\\end{aligned}`;
 }
 
+function differential(variableLatex?: string): string {
+  return `d${variableLatex ?? "x"}`;
+}
+
+function derivativeOperator(variableLatex?: string): string {
+  return `\\frac{d}{d${variableLatex ?? "x"}}`;
+}
+
 function ResultCard({ result, lang }: { result: IntegralResult; lang: "en" | "zh" }) {
   const ok = result.status === "ok";
   const label = lang === "zh" ? {
@@ -86,7 +94,7 @@ function ResultCard({ result, lang }: { result: IntegralResult; lang: "en" | "zh
           <div>
             <p className="text-[#7CA7D9] text-xs uppercase tracking-widest mb-2">{label.answer}</p>
             <div className="rounded-xl formula-surface border border-[#F4EDE0]/10 p-3 overflow-x-auto shadow-inner">
-              <KaTeXRenderer latex={alignedLatex([`\\int ${result.integrandLatex}\\,dx=${result.answerLatex}`])} displayMode />
+              <KaTeXRenderer latex={alignedLatex([`\\int ${result.integrandLatex}\\,${differential(result.variableLatex)}=${result.answerLatex}`])} displayMode />
             </div>
           </div>
         ) : (
@@ -111,23 +119,27 @@ function ResultCard({ result, lang }: { result: IntegralResult; lang: "en" | "zh
 
 function FormulaReferenceIntegral({ lang }: { lang: "en" | "zh" }) {
   const formulae = lang === "zh" ? [
-    ["冪次法則", "\\int x^n\\,dx=\\frac{x^{n+1}}{n+1}+C,\\quad n\\ne -1"],
-    ["對數形式", "\\int \\frac{1}{ax+b}\\,dx=\\frac{1}{a}\\ln|ax+b|+C"],
-    ["指數函數", "\\int e^{ax+b}\\,dx=\\frac{1}{a}e^{ax+b}+C"],
-    ["一般指數", "\\int a^{kx+b}\\,dx=\\frac{a^{kx+b}}{k\\ln a}+C"],
-    ["三角函數", "\\int \\sin(ax+b)\\,dx=-\\frac{1}{a}\\cos(ax+b)+C"],
-    ["三角函數", "\\int \\cos(ax+b)\\,dx=\\frac{1}{a}\\sin(ax+b)+C"],
-    ["反鏈式法則", "\\int f'(x)[f(x)]^n\\,dx=\\frac{[f(x)]^{n+1}}{n+1}+C"],
-    ["反鏈式法則", "\\int \\frac{f'(x)}{f(x)}\\,dx=\\ln|f(x)|+C"],
+    ["冪次法則", "\\int u^n\\,du=\\frac{u^{n+1}}{n+1}+C,\\quad n\\ne -1"],
+    ["對數形式", "\\int \\frac{1}{au+b}\\,du=\\frac{1}{a}\\ln|au+b|+C"],
+    ["指數函數", "\\int e^{au+b}\\,du=\\frac{1}{a}e^{au+b}+C"],
+    ["一般指數", "\\int a^{ku+b}\\,du=\\frac{a^{ku+b}}{k\\ln a}+C"],
+    ["三角函數", "\\int \\sin(au+b)\\,du=-\\frac{1}{a}\\cos(au+b)+C"],
+    ["三角函數", "\\int \\cos(au+b)\\,du=\\frac{1}{a}\\sin(au+b)+C"],
+    ["反鏈式法則", "\\int f'(u)[f(u)]^n\\,du=\\frac{[f(u)]^{n+1}}{n+1}+C"],
+    ["反鏈式法則", "\\int \\frac{f'(u)}{f(u)}\\,du=\\ln|f(u)|+C"],
+    ["分部積分", "\\int p(u)q'(u)\\,du=p(u)q(u)-\\int q(u)p'(u)\\,du"],
+    ["三角代換", "\\sqrt{a^2-u^2}:\\ u=a\\sin\\theta,\\quad a^2+u^2:\\ u=a\\tan\\theta"],
   ] : [
-    ["Power rule", "\\int x^n\\,dx=\\frac{x^{n+1}}{n+1}+C,\\quad n\\ne -1"],
-    ["Logarithmic form", "\\int \\frac{1}{ax+b}\\,dx=\\frac{1}{a}\\ln|ax+b|+C"],
-    ["Exponential", "\\int e^{ax+b}\\,dx=\\frac{1}{a}e^{ax+b}+C"],
-    ["General exponential", "\\int a^{kx+b}\\,dx=\\frac{a^{kx+b}}{k\\ln a}+C"],
-    ["Trigonometric", "\\int \\sin(ax+b)\\,dx=-\\frac{1}{a}\\cos(ax+b)+C"],
-    ["Trigonometric", "\\int \\cos(ax+b)\\,dx=\\frac{1}{a}\\sin(ax+b)+C"],
-    ["Reverse chain rule", "\\int f'(x)[f(x)]^n\\,dx=\\frac{[f(x)]^{n+1}}{n+1}+C"],
-    ["Reverse chain rule", "\\int \\frac{f'(x)}{f(x)}\\,dx=\\ln|f(x)|+C"],
+    ["Power rule", "\\int u^n\\,du=\\frac{u^{n+1}}{n+1}+C,\\quad n\\ne -1"],
+    ["Logarithmic form", "\\int \\frac{1}{au+b}\\,du=\\frac{1}{a}\\ln|au+b|+C"],
+    ["Exponential", "\\int e^{au+b}\\,du=\\frac{1}{a}e^{au+b}+C"],
+    ["General exponential", "\\int a^{ku+b}\\,du=\\frac{a^{ku+b}}{k\\ln a}+C"],
+    ["Trigonometric", "\\int \\sin(au+b)\\,du=-\\frac{1}{a}\\cos(au+b)+C"],
+    ["Trigonometric", "\\int \\cos(au+b)\\,du=\\frac{1}{a}\\sin(au+b)+C"],
+    ["Reverse chain rule", "\\int f'(u)[f(u)]^n\\,du=\\frac{[f(u)]^{n+1}}{n+1}+C"],
+    ["Reverse chain rule", "\\int \\frac{f'(u)}{f(u)}\\,du=\\ln|f(u)|+C"],
+    ["Integration by parts", "\\int p(u)q'(u)\\,du=p(u)q(u)-\\int q(u)p'(u)\\,du"],
+    ["Trig substitution", "\\sqrt{a^2-u^2}:\\ u=a\\sin\\theta,\\quad a^2+u^2:\\ u=a\\tan\\theta"],
   ];
 
   return (
@@ -176,6 +188,10 @@ export default function Home() {
   }, []);
 
   const previewLatex = useMemo(() => latexOfExpression(expression), [expression]);
+  const previewResult = useMemo(() => calculateIntegral(expression), [expression]);
+  const previewDifferential = differential(previewResult.variableLatex);
+  const practicePreviewResult = useMemo(() => calculateIntegral(practiceExpression), [practiceExpression]);
+  const practiceDifferential = differential(practicePreviewResult.variableLatex);
 
   const handleNavigate = (section: string) => {
     document.getElementById(section)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -231,7 +247,7 @@ export default function Home() {
           <p className="text-[#F4EDE0]/68 text-sm sm:text-base max-w-3xl mx-auto leading-relaxed">{t.integralHeroDesc}</p>
           <div className="mt-6 mx-auto max-w-3xl rounded-2xl border border-[#F4EDE0]/10 bg-[#080B13]/45 backdrop-blur-md p-3 sm:p-4 shadow-[0_18px_55px_rgba(0,0,0,0.22)]">
             <div className="grid gap-2 sm:grid-cols-3 text-center">
-              {["\\frac{d}{dx}F(x)=f(x)", "\\int f(x)\\,dx=F(x)+C", "\\text{HKDSE M2 methods}"].map((formula, index) => (
+              {["\\frac{d}{du}F(u)=f(u)", "\\int f(u)\\,du=F(u)+C", "\\text{HKDSE M2 methods}"].map((formula, index) => (
                 <div key={index} className="rounded-xl border border-[#F4EDE0]/8 bg-white/[0.025] px-3 py-2 overflow-x-auto">
                   <KaTeXRenderer latex={formula} displayMode />
                 </div>
@@ -263,7 +279,7 @@ export default function Home() {
               </label>
               <div className="rounded-2xl formula-surface border border-[#F4EDE0]/10 p-4 overflow-x-auto min-h-16 shadow-inner">
                 <p className="text-[#7CA7D9] text-xs uppercase tracking-widest mb-2">{t.preview}</p>
-                <KaTeXRenderer latex={`\\int ${previewLatex}\\,dx`} displayMode />
+                <KaTeXRenderer latex={`\\int ${previewLatex}\\,${previewDifferential}`} displayMode />
               </div>
               <div className="flex flex-wrap gap-2">
                 <button onClick={calculateMain} className="rounded-2xl bg-gradient-to-r from-[#C8A45D] to-[#D8B86A] text-[#080B13] px-5 py-2.5 text-sm font-bold hover:brightness-110 shadow-lg shadow-[#C8A45D]/18 transition-all">{t.calculate}</button>
@@ -281,7 +297,7 @@ export default function Home() {
               <div className="rounded-2xl border border-[#9AD7B7]/24 bg-[#9AD7B7]/8 p-4 shadow-inner shadow-[#9AD7B7]/5">
                 <p className="text-[#9AD7B7] text-sm font-semibold mb-2">{lang === "zh" ? "隨機練習與即時檢查" : "Random practice with instant checking"}</p>
                 <div className="rounded-xl formula-surface border border-[#F4EDE0]/10 p-3 mb-3 overflow-x-auto">
-                  <KaTeXRenderer latex={`\\int ${latexOfExpression(practiceExpression)}\\,dx`} displayMode />
+                  <KaTeXRenderer latex={`\\int ${latexOfExpression(practiceExpression)}\\,${practiceDifferential}`} displayMode />
                 </div>
                 <input value={practiceAnswer} onChange={(e) => setPracticeAnswer(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") checkPractice(); }} placeholder={lang === "zh" ? "輸入你的不定積分答案，例如 x^3/3+C" : "Enter your antiderivative, e.g. x^3/3+C"} className="w-full rounded-xl bg-[#080B13]/70 border border-[#F4EDE0]/12 px-3 py-2 text-[#F4EDE0] placeholder:text-[#F4EDE0]/28 focus:outline-none focus:ring-2 focus:ring-[#9AD7B7]/50 shadow-inner" />
                 <div className="flex flex-wrap gap-2 mt-3">
@@ -291,7 +307,7 @@ export default function Home() {
                 {practiceFeedback && (
                   <div className={`mt-3 rounded-lg border p-3 ${practiceFeedback.correct ? "border-[#9AD7B7]/35 bg-[#9AD7B7]/10" : "border-[#C8A45D]/35 bg-[#C8A45D]/10"}`}>
                     <p className="text-[#F4EDE0]/75 text-sm">{lang === "zh" ? practiceFeedback.messageZh : practiceFeedback.messageEn}</p>
-                    {practiceFeedback.derivativeLatex && <div className="mt-2 overflow-x-auto"><KaTeXRenderer latex={alignedLatex([`\\frac{d}{dx}(${latexOfExpression(practiceAnswer)})=${practiceFeedback.derivativeLatex}`])} displayMode /></div>}
+                    {practiceFeedback.derivativeLatex && <div className="mt-2 overflow-x-auto"><KaTeXRenderer latex={alignedLatex([`${derivativeOperator(practiceFeedback.variableLatex)}(${latexOfExpression(practiceAnswer)})=${practiceFeedback.derivativeLatex}`])} displayMode /></div>}
                   </div>
                 )}
               </div>
@@ -305,7 +321,7 @@ export default function Home() {
               <div className="rounded-2xl border border-[#F4EDE0]/10 bg-[#080B13]/48 p-4 shadow-inner">
                 <p className="text-[#C8A45D] text-sm font-semibold mb-2">{t.supportedScope}</p>
                 <p className="text-[#F4EDE0]/60 text-sm leading-relaxed">
-                  {lang === "zh" ? "支援線性拆項、常數倍、冪次、一次式代換、對數型、指數型、三角函數及部分反鏈式法則。若題目需要超出 M2 或尚未實作的技巧，系統會回傳提示。" : "Supports linearity, constant multiples, powers, affine substitution, logarithmic forms, exponentials, trigonometric rules, and selected reverse-chain patterns. If a question requires methods beyond M2 or not yet implemented, the app returns a hint."}
+                  {lang === "zh" ? "支援線性拆項、常數倍、冪次、一次式代換、對數型、指數型、三角函數、反鏈式法則、基本分部積分，以及表列的三角代換。系統會自動偵測單一積分變數，可用英文字母或 α、β、θ、φ 等小寫希臘字母。若題目需要超出 M2 或尚未實作的技巧，系統會回傳提示。" : "Supports linearity, constant multiples, powers, affine substitution, logarithmic forms, exponentials, trigonometric rules, reverse-chain patterns, basic integration by parts, and listed trigonometric substitutions. The app auto-detects one integration variable, including Latin letters and lowercase Greek letters such as α, β, θ and φ. If a question requires methods beyond M2 or not yet implemented, the app returns a hint."}
                 </p>
               </div>
             </div>

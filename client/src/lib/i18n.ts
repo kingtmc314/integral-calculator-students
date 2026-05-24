@@ -100,11 +100,11 @@ export const translations = {
     footerNote: "All supported results are exact symbolic values rendered in LaTeX.",
 
     // ── Integral App ───────────────────────────────────────────
-    integralHeroDesc: "Calculate indefinite integrals using HKDSE M2 methods only. Unsupported cases return learning hints instead of unreliable answers.",
+    integralHeroDesc: "Calculate indefinite integrals using HKDSE M2 methods only. The app auto-detects one integration variable, including x, t, y and lowercase Greek letters such as α, β, θ and φ.",
     integralInputTitle: "Indefinite Integral",
-    integralInputDesc: "Enter an expression in x. Use * for multiplication, ^ for powers, and brackets for functions.",
+    integralInputDesc: "Enter an expression with one variable. Use * for multiplication, ^ for powers, and brackets for functions; variables may be x, t, y, α, β, θ, φ, etc.",
     integrand: "Integrand",
-    integrandHint: "e.g. x^2 + sin(2*x), 1/(2*x+1), x*(x^2+1)^4",
+    integrandHint: "e.g. x^2 + sin(2*x), t^2, sin(θ), x*sin(x)",
     preview: "LaTeX Preview",
     answer: "Answer",
     method: "Method",
@@ -216,11 +216,11 @@ export const translations = {
     footerNote: "所有支援結果均為以 LaTeX 渲染的精確符號值。",
 
     // ── Integral App ───────────────────────────────────────────
-    integralHeroDesc: "只使用 HKDSE M2 範圍內的方法計算不定積分。若未能支援，系統會給出學習提示，而不會提供不可靠答案。",
+    integralHeroDesc: "只使用 HKDSE M2 範圍內的方法計算不定積分。系統會自動偵測單一積分變數，包括 x、t、y 及 α、β、θ、φ 等小寫希臘字母。",
     integralInputTitle: "不定積分",
-    integralInputDesc: "輸入以 x 表示的式子。請用 * 表示乘法、^ 表示冪次，函數需加括號。",
+    integralInputDesc: "輸入含單一變數的式子。請用 * 表示乘法、^ 表示冪次，函數需加括號；變數可為 x、t、y、α、β、θ、φ 等。",
     integrand: "被積函數",
-    integrandHint: "例如：x^2 + sin(2*x)、1/(2*x+1)、x*(x^2+1)^4",
+    integrandHint: "例如：x^2 + sin(2*x)、t^2、sin(θ)、x*sin(x)",
     preview: "LaTeX 預覽",
     answer: "答案",
     method: "方法",
