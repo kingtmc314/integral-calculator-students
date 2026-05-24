@@ -127,7 +127,11 @@ function FormulaReferenceIntegral({ lang }: { lang: "en" | "zh" }) {
     ["三角函數", "\\int \\cos(au+b)\\,du=\\frac{1}{a}\\sin(au+b)+C"],
     ["反鏈式法則", "\\int f'(u)[f(u)]^n\\,du=\\frac{[f(u)]^{n+1}}{n+1}+C"],
     ["反鏈式法則", "\\int \\frac{f'(u)}{f(u)}\\,du=\\ln|f(u)|+C"],
+    ["有理函數：長除法", "\\frac{P(u)}{Q(u)}=S(u)+\\frac{R(u)}{Q(u)},\\quad \\deg R<\\deg Q"],
+    ["方法選擇", "\\text{先試直接公式／有理函數；只在代換後化成已支援標準型時才代換}"],
     ["分部積分", "\\int p(u)q'(u)\\,du=p(u)q(u)-\\int q(u)p'(u)\\,du"],
+    ["兩次分部積分", "I=\\int e^u\\sin u\\,du\\Rightarrow 2I=e^u(\\sin u-\\cos u)"],
+    ["混合技巧", "\\sin(\\ln u),\\ \\cos(\\sqrt{u})\\Rightarrow \\text{先作合適代換，再判斷標準型}"],
     ["三角代換", "\\sqrt{a^2-u^2}:\\ u=a\\sin\\theta,\\quad a^2+u^2:\\ u=a\\tan\\theta"],
   ] : [
     ["Power rule", "\\int u^n\\,du=\\frac{u^{n+1}}{n+1}+C,\\quad n\\ne -1"],
@@ -138,7 +142,11 @@ function FormulaReferenceIntegral({ lang }: { lang: "en" | "zh" }) {
     ["Trigonometric", "\\int \\cos(au+b)\\,du=\\frac{1}{a}\\sin(au+b)+C"],
     ["Reverse chain rule", "\\int f'(u)[f(u)]^n\\,du=\\frac{[f(u)]^{n+1}}{n+1}+C"],
     ["Reverse chain rule", "\\int \\frac{f'(u)}{f(u)}\\,du=\\ln|f(u)|+C"],
+    ["Rational functions: long division", "\\frac{P(u)}{Q(u)}=S(u)+\\frac{R(u)}{Q(u)},\\quad \\deg R<\\deg Q"],
+    ["Method choice", "\\text{Try direct rules/rational functions first; substitute only if it becomes a supported standard form}"],
     ["Integration by parts", "\\int p(u)q'(u)\\,du=p(u)q(u)-\\int q(u)p'(u)\\,du"],
+    ["Repeated by parts", "I=\\int e^u\\sin u\\,du\\Rightarrow 2I=e^u(\\sin u-\\cos u)"],
+    ["Mixed techniques", "\\sin(\\ln u),\\ \\cos(\\sqrt{u})\\Rightarrow \\text{substitute first, then check the standard form}"],
     ["Trig substitution", "\\sqrt{a^2-u^2}:\\ u=a\\sin\\theta,\\quad a^2+u^2:\\ u=a\\tan\\theta"],
   ];
 

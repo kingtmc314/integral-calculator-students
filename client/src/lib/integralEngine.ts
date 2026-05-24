@@ -330,6 +330,349 @@ function combineFactors(factors: AnyNode[]): string {
   return factors.map((f) => maybeParenthesize(f.toString())).join("*") || "1";
 }
 
+
+type Polynomial = number[];
+
+function trimPoly(poly: Polynomial): Polynomial {
+  const result = [...poly];
+  while (result.length > 1 && Math.abs(result[result.length - 1]) < 1e-10) result.pop();
+  return result.length === 0 ? [0] : result;
+}
+
+function polyDegree(poly: Polynomial): number {
+  return trimPoly(poly).length - 1;
+}
+
+function polyAdd(a: Polynomial, b: Polynomial, sign = 1): Polynomial {
+  const n = Math.max(a.length, b.length);
+  const out = Array(n).fill(0) as Polynomial;
+  for (let i = 0; i < n; i++) out[i] = (a[i] ?? 0) + sign * (b[i] ?? 0);
+  return trimPoly(out);
+}
+
+function polyMul(a: Polynomial, b: Polynomial): Polynomial {
+  const out = Array(a.length + b.length - 1).fill(0) as Polynomial;
+  for (let i = 0; i < a.length; i++) for (let j = 0; j < b.length; j++) out[i + j] += a[i] * b[j];
+  return trimPoly(out);
+}
+
+function polyScale(a: Polynomial, c: number): Polynomial {
+  return trimPoly(a.map((v) => v * c));
+}
+
+function polyDivide(numerator: Polynomial, denominator: Polynomial): { quotient: Polynomial; remainder: Polynomial } | null {
+  const den = trimPoly(denominator);
+  if (den.length === 1 && Math.abs(den[0]) < 1e-10) return null;
+  let rem = trimPoly(numerator);
+  const quotient = Array(Math.max(1, polyDegree(rem) - polyDegree(den) + 1)).fill(0) as Polynomial;
+  while (polyDegree(rem) >= polyDegree(den) && !(rem.length === 1 && Math.abs(rem[0]) < 1e-10)) {
+    const power = polyDegree(rem) - polyDegree(den);
+    const coeff = rem[rem.length - 1] / den[den.length - 1];
+    quotient[power] += coeff;
+    const subtractor = Array(power).fill(0).concat(polyScale(den, coeff)) as Polynomial;
+    rem = polyAdd(rem, subtractor, -1);
+  }
+  return { quotient: trimPoly(quotient), remainder: trimPoly(rem) };
+}
+
+function rationalNumberString(value: number): string {
+  if (Math.abs(value) < 1e-10) return "0";
+  const rounded = Math.round(value);
+  if (Math.abs(value - rounded) < 1e-10) return String(rounded);
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  for (let d = 2; d <= 1000; d++) {
+    const n = Math.round(abs * d);
+    if (Math.abs(abs - n / d) < 1e-10) return `${sign}${n}/${d}`;
+  }
+  return String(Number(value.toPrecision(12)));
+}
+
+function polyToExpr(poly: Polynomial, variable: string): string {
+  const terms: string[] = [];
+  trimPoly(poly).forEach((coeff, degree) => {
+    if (Math.abs(coeff) < 1e-10) return;
+    const c = rationalNumberString(coeff);
+    if (degree === 0) terms.push(c);
+    else if (degree === 1) terms.push(isOne(c) ? variable : isMinusOne(c) ? `-${variable}` : `${c}*${variable}`);
+    else terms.push(isOne(c) ? `${variable}^${degree}` : isMinusOne(c) ? `-${variable}^${degree}` : `${c}*${variable}^${degree}`);
+  });
+  return terms.length ? simplifyExpr(terms.join("+")) : "0";
+}
+
+function nodeToPolynomial(node: AnyNode, ctx: IntegrationContext): Polynomial | null {
+  if (node.type === "ParenthesisNode") return nodeToPolynomial((node as any).content, ctx);
+  if (node.type === "ConstantNode") {
+    const value = constantValue(node.toString(), ctx);
+    return value === null ? null : [value];
+  }
+  if (node.type === "SymbolNode") {
+    const text = node.toString();
+    if (text === ctx.variable) return [0, 1];
+    if (!hasVariable(text, ctx)) {
+      const value = constantValue(text, ctx);
+      return value === null ? null : [value];
+    }
+    return null;
+  }
+  if (node.type !== "OperatorNode") return null;
+  const op = (node as any).op as string;
+  const args = (node as any).args as AnyNode[];
+  if (op === "unaryMinus" || (op === "-" && args.length === 1)) {
+    const inner = nodeToPolynomial(args[0], ctx);
+    return inner ? polyScale(inner, -1) : null;
+  }
+  if (op === "+" || op === "-") {
+    const left = nodeToPolynomial(args[0], ctx);
+    const right = nodeToPolynomial(args[1], ctx);
+    return left && right ? polyAdd(left, right, op === "+" ? 1 : -1) : null;
+  }
+  if (op === "*") {
+    const left = nodeToPolynomial(args[0], ctx);
+    const right = nodeToPolynomial(args[1], ctx);
+    return left && right ? polyMul(left, right) : null;
+  }
+  if (op === "/") {
+    const left = nodeToPolynomial(args[0], ctx);
+    const right = nodeToPolynomial(args[1], ctx);
+    if (!left || !right || polyDegree(right) !== 0 || Math.abs(right[0]) < 1e-10) return null;
+    return polyScale(left, 1 / right[0]);
+  }
+  if (op === "^") {
+    const base = nodeToPolynomial(args[0], ctx);
+    const exponent = constantValue(args[1].toString(), ctx);
+    if (!base || exponent === null || !Number.isInteger(exponent) || exponent < 0 || exponent > 8) return null;
+    let out: Polynomial = [1];
+    for (let i = 0; i < exponent; i++) out = polyMul(out, base);
+    return out;
+  }
+  return null;
+}
+
+function exprToPolynomial(expr: string, ctx: IntegrationContext): Polynomial | null {
+  try {
+    return nodeToPolynomial(parse(expr), ctx);
+  } catch {
+    return null;
+  }
+}
+
+function tryRationalLongDivision(numerator: string, denominator: string, ctx: IntegrationContext): Integrated | null {
+  const numeratorPoly = exprToPolynomial(numerator, ctx);
+  const denominatorPoly = exprToPolynomial(denominator, ctx);
+  if (!numeratorPoly || !denominatorPoly) return null;
+  if (polyDegree(denominatorPoly) < 1 || polyDegree(numeratorPoly) < polyDegree(denominatorPoly)) return null;
+
+  const divided = polyDivide(numeratorPoly, denominatorPoly);
+  if (!divided) return null;
+  const quotientExpr = polyToExpr(divided.quotient, ctx.variable);
+  const denominatorExpr = polyToExpr(denominatorPoly, ctx.variable);
+  const remainderExpr = polyToExpr(divided.remainder, ctx.variable);
+  const hasRemainder = !(trimPoly(divided.remainder).length === 1 && Math.abs(divided.remainder[0]) < 1e-10);
+
+  let quotientIntegral: Integrated;
+  try {
+    quotientIntegral = integrateNode(parse(quotientExpr), { ...ctx, depth: ctx.depth + 1 });
+  } catch {
+    return null;
+  }
+
+  if (!hasRemainder) {
+    return {
+      expr: quotientIntegral.expr,
+      method: "rational function long division",
+      methodZh: "有理函數多項式長除法",
+      steps: [
+        `${toLatex(numerator)}\\div ${toLatex(denominator)}=${toLatex(quotientExpr)}`,
+        `${intLatex(`(${numerator})/(${denominator})`, ctx)}=${intLatex(quotientExpr, ctx)}`,
+        ...quotientIntegral.steps,
+        `${intLatex(`(${numerator})/(${denominator})`, ctx)}=${toLatex(quotientIntegral.expr)}+C`,
+      ],
+    };
+  }
+
+  const remainderQuotient = `(${remainderExpr})/(${denominatorExpr})`;
+  let remainderIntegral: Integrated;
+  try {
+    remainderIntegral = integrateNode(parse(remainderQuotient), { ...ctx, depth: ctx.depth + 1 });
+  } catch {
+    return null;
+  }
+  const result = simplifyExpr(`(${quotientIntegral.expr})+(${remainderIntegral.expr})`);
+  return {
+    expr: result,
+    method: "rational function long division + remainder integration",
+    methodZh: "有理函數多項式長除法 + 餘式積分",
+    steps: [
+      `${toLatex(numerator)}\\div ${toLatex(denominator)}=${toLatex(quotientExpr)}+\\frac{${toLatex(remainderExpr)}}{${toLatex(denominatorExpr)}}`,
+      `${intLatex(`(${numerator})/(${denominator})`, ctx)}=${intLatex(quotientExpr, ctx)}+${intLatex(remainderQuotient, ctx)}`,
+      ...quotientIntegral.steps,
+      ...remainderIntegral.steps,
+      `${intLatex(`(${numerator})/(${denominator})`, ctx)}=${toLatex(result)}+C`,
+    ],
+  };
+}
+
+function exponentialInner(node: AnyNode): string | null {
+  if (functionName(node) === "exp") return functionArg(node)?.toString() ?? null;
+  if (node.type === "OperatorNode" && (node as any).op === "^") {
+    const [baseNode, exponentNode] = (node as any).args as AnyNode[];
+    const base = baseNode.toString();
+    if (base === "e" || simplifyExpr(base) === "e") return exponentNode.toString();
+  }
+  return null;
+}
+
+function equivalentExpr(a: string, b: string, ctx: IntegrationContext): boolean {
+  return simplifyExpr(a) === simplifyExpr(b) || isZeroExpr(`(${a})-(${b})`, ctx);
+}
+
+function tryRepeatedByPartsExpTrig(factors: AnyNode[], ctx: IntegrationContext): Integrated | null {
+  if (factors.length !== 2 || ctx.depth > 5) return null;
+
+  const expItem = factors
+    .map((factor, index) => ({ factor, index, inner: exponentialInner(factor) }))
+    .find((item) => item.inner !== null);
+  if (!expItem || !expItem.inner) return null;
+
+  const trigItem = factors
+    .map((factor, index) => ({ factor, index, fn: functionName(factor), arg: functionArg(factor) }))
+    .find((item) => item.index !== expItem.index && (item.fn === "sin" || item.fn === "cos") && item.arg);
+  if (!trigItem || !trigItem.arg || (trigItem.fn !== "sin" && trigItem.fn !== "cos")) return null;
+
+  const z = expItem.inner;
+  const trigArg = trigItem.arg.toString();
+  if (!equivalentExpr(z, trigArg, ctx)) return null;
+
+  const dz = affineDerivative(z, ctx);
+  if (!dz) return null;
+
+  const original = combineFactors(factors);
+  const expZ = `exp(${z})`;
+  const sinZ = `sin(${z})`;
+  const cosZ = `cos(${z})`;
+  const sign = trigItem.fn === "sin" ? "-" : "+";
+  const result = simplifyExpr(`(${expZ})*((${sinZ})${sign}(${cosZ}))/(2*(${dz}))`);
+  const vl = variableLatex(ctx.variable);
+  const zLatex = toLatex(z);
+  const dLatex = toLatex(dz);
+  const expLatex = `e^{${zLatex}}`;
+
+  if (trigItem.fn === "sin") {
+    const jIntegrand = `${expZ}*${cosZ}`;
+    return {
+      expr: result,
+      method: "repeated integration by parts and solving for the original integral",
+      methodZh: "連續兩次分部積分並移項求原積分",
+      steps: [
+        `I=${intLatex(original, ctx)}`,
+        `\\text{First by parts: }u=\\sin(${zLatex}),\\quad dv=${expLatex}\\,${dVar(ctx)}`,
+        `du=${dLatex}\\cos(${zLatex})\\,${dVar(ctx)},\\quad v=\\frac{${expLatex}}{${dLatex}}`,
+        `I=\\frac{${expLatex}\\sin(${zLatex})}{${dLatex}}-${intLatex(jIntegrand, ctx)}`,
+        `J=${intLatex(jIntegrand, ctx)}`,
+        `\\text{Second by parts: }u=\\cos(${zLatex}),\\quad dv=${expLatex}\\,${dVar(ctx)}`,
+        `du=-${dLatex}\\sin(${zLatex})\\,${dVar(ctx)},\\quad v=\\frac{${expLatex}}{${dLatex}}`,
+        `J=\\frac{${expLatex}\\cos(${zLatex})}{${dLatex}}+I`,
+        `I=\\frac{${expLatex}\\sin(${zLatex})}{${dLatex}}-\\left(\\frac{${expLatex}\\cos(${zLatex})}{${dLatex}}+I\\right)`,
+        `2I=\\frac{${expLatex}\\left(\\sin(${zLatex})-\\cos(${zLatex})\\right)}{${dLatex}}`,
+        `${intLatex(original, ctx)}=${toLatex(result)}+C`,
+      ],
+    };
+  }
+
+  const jIntegrand = `${expZ}*${sinZ}`;
+  return {
+    expr: result,
+    method: "repeated integration by parts and solving for the original integral",
+    methodZh: "連續兩次分部積分並移項求原積分",
+    steps: [
+      `I=${intLatex(original, ctx)}`,
+      `\\text{First by parts: }u=\\cos(${zLatex}),\\quad dv=${expLatex}\\,${dVar(ctx)}`,
+      `du=-${dLatex}\\sin(${zLatex})\\,${dVar(ctx)},\\quad v=\\frac{${expLatex}}{${dLatex}}`,
+      `I=\\frac{${expLatex}\\cos(${zLatex})}{${dLatex}}+${intLatex(jIntegrand, ctx)}`,
+      `J=${intLatex(jIntegrand, ctx)}`,
+      `\\text{Second by parts: }u=\\sin(${zLatex}),\\quad dv=${expLatex}\\,${dVar(ctx)}`,
+      `du=${dLatex}\\cos(${zLatex})\\,${dVar(ctx)},\\quad v=\\frac{${expLatex}}{${dLatex}}`,
+      `J=\\frac{${expLatex}\\sin(${zLatex})}{${dLatex}}-I`,
+      `I=\\frac{${expLatex}\\cos(${zLatex})}{${dLatex}}+\\left(\\frac{${expLatex}\\sin(${zLatex})}{${dLatex}}-I\\right)`,
+      `2I=\\frac{${expLatex}\\left(\\sin(${zLatex})+\\cos(${zLatex})\\right)}{${dLatex}}`,
+      `${intLatex(original, ctx)}=${toLatex(result)}+C`,
+    ],
+  };
+}
+
+
+function isVariableNode(node: AnyNode, ctx: IntegrationContext): boolean {
+  return node.toString() === ctx.variable;
+}
+
+function isLogOfVariable(node: AnyNode, ctx: IntegrationContext): boolean {
+  return functionName(node) === "log" && !!functionArg(node) && isVariableNode(functionArg(node)!, ctx);
+}
+
+function isSqrtOfVariable(node: AnyNode, ctx: IntegrationContext): boolean {
+  if (functionName(node) === "sqrt" && functionArg(node)) return isVariableNode(functionArg(node)!, ctx);
+  if (node.type === "OperatorNode" && (node as any).op === "^") {
+    const [baseNode, expNode] = (node as any).args as AnyNode[];
+    const expVal = constantValue(expNode.toString(), ctx);
+    return isVariableNode(baseNode, ctx) && expVal !== null && Math.abs(expVal - 0.5) < 1e-10;
+  }
+  return false;
+}
+
+function tryTrigLogSubstitution(fn: string, arg: AnyNode, ctx: IntegrationContext): Integrated | null {
+  if ((fn !== "sin" && fn !== "cos") || !isLogOfVariable(arg, ctx)) return null;
+  const v = ctx.variable;
+  const vl = variableLatex(v);
+  const uLatex = `\\ln ${vl}`;
+  const trigExpr = `${fn}(log(${v}))`;
+  const result = fn === "sin"
+    ? simplifyExpr(`${v}*(sin(log(${v}))-cos(log(${v})))/2`)
+    : simplifyExpr(`${v}*(sin(log(${v}))+cos(log(${v})))/2`);
+  const innerExp = fn === "sin" ? "exp(u)*sin(u)" : "exp(u)*cos(u)";
+  const innerResult = fn === "sin" ? "e^u(sin(u)-cos(u))/2" : "e^u(sin(u)+cos(u))/2";
+  return {
+    expr: result,
+    method: "substitution followed by repeated integration by parts",
+    methodZh: "代換後連續分部積分",
+    steps: [
+      `u=${uLatex},\\quad ${dVar(ctx)}=${vl}\\,du=e^u\\,du`,
+      `${intLatex(trigExpr, ctx)}=\\int e^u${fn === "sin" ? "\\sin u" : "\\cos u"}\\,du`,
+      `\\text{Now use repeated integration by parts and solve for the original integral: }\\int ${toLatex(innerExp)}\\,du=${toLatex(innerResult)}+C`,
+      `${intLatex(trigExpr, ctx)}=${toLatex(result)}+C`,
+    ],
+  };
+}
+
+function tryTrigSqrtSubstitution(fn: string, arg: AnyNode, ctx: IntegrationContext): Integrated | null {
+  if ((fn !== "sin" && fn !== "cos") || !isSqrtOfVariable(arg, ctx)) return null;
+  const v = ctx.variable;
+  const vl = variableLatex(v);
+  const sqrtV = `sqrt(${v})`;
+  const sqrtLatex = `\\sqrt{${vl}}`;
+  const trigExpr = `${fn}(${sqrtV})`;
+  const result = fn === "sin"
+    ? simplifyExpr(`2*(sin(${sqrtV})-${sqrtV}*cos(${sqrtV}))`)
+    : simplifyExpr(`2*(${sqrtV}*sin(${sqrtV})+cos(${sqrtV}))`);
+  const transformed = fn === "sin" ? "2*u*sin(u)" : "2*u*cos(u)";
+  const transformedResult = fn === "sin" ? "2*(sin(u)-u*cos(u))" : "2*(u*sin(u)+cos(u))";
+  return {
+    expr: result,
+    method: "substitution followed by integration by parts",
+    methodZh: "代換後分部積分",
+    steps: [
+      `u=${sqrtLatex},\\quad ${vl}=u^2,\\quad ${dVar(ctx)}=2u\\,du`,
+      `${intLatex(trigExpr, ctx)}=\\int ${fn === "sin" ? "2u\\sin u" : "2u\\cos u"}\\,du`,
+      `\\text{Use integration by parts on }\\int ${toLatex(transformed)}\\,du=${toLatex(transformedResult)}+C`,
+      `${intLatex(trigExpr, ctx)}=${toLatex(result)}+C`,
+    ],
+  };
+}
+
+function tryValidatedMixedFunctionTechnique(fn: string, arg: AnyNode, ctx: IntegrationContext): Integrated | null {
+  return tryTrigLogSubstitution(fn, arg, ctx) ?? tryTrigSqrtSubstitution(fn, arg, ctx);
+}
+
 function integrateNode(node: AnyNode, ctx: IntegrationContext): Integrated {
   const text = node.toString();
 
@@ -419,6 +762,9 @@ function integrateNode(node: AnyNode, ctx: IntegrationContext): Integrated {
         };
       }
 
+      const repeatedByParts = tryRepeatedByPartsExpTrig(factors, ctx);
+      if (repeatedByParts) return repeatedByParts;
+
       const reverse = tryReverseChainFromProduct(factors, ctx);
       if (reverse) return reverse;
 
@@ -429,6 +775,8 @@ function integrateNode(node: AnyNode, ctx: IntegrationContext): Integrated {
     if (op === "/") {
       const numerator = args[0].toString();
       const denominator = args[1].toString();
+      const longDivision = tryRationalLongDivision(numerator, denominator, ctx);
+      if (longDivision) return longDivision;
       const denomDerivative = derivativeExpr(denominator, ctx);
       const reverseLogCoeff = proportionalTo(numerator, denomDerivative, ctx);
       if (reverseLogCoeff) {
@@ -512,6 +860,8 @@ function integrateNode(node: AnyNode, ctx: IntegrationContext): Integrated {
     const fn = functionName(node) ?? "";
     const arg = functionArg(node);
     if (arg) {
+      const mixed = tryValidatedMixedFunctionTechnique(fn, arg, ctx);
+      if (mixed) return mixed;
       const inner = arg.toString();
       const d = affineDerivative(inner, ctx);
       if (d) {
@@ -891,6 +1241,11 @@ export const integralExamples = [
   "x*sin(x)",
   "x*exp(x)",
   "x^2*log(x)",
+  "exp(x)*sin(x)",
+  "exp(x)*cos(x)",
+  "sin(log(x))",
+  "cos(sqrt(x))",
+  "(x^3+1)/(x+1)",
   "log(y)",
   "1/(4+x^2)",
   "1/sqrt(9-x^2)",
