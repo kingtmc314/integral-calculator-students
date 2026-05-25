@@ -217,12 +217,29 @@ function intLatex(expr: string, ctx: IntegrationContext): string {
   return `\\int ${toLatex(expr)}\\,${dVar(ctx)}`;
 }
 
+function simplifyTrigConstants(expr: string): string {
+  return expr
+    .replace(/\bsin\(0\)/g, "0")
+    .replace(/\bcos\(0\)/g, "1")
+    .replace(/\btan\(0\)/g, "0")
+    .replace(/\bsin\(pi\)/g, "0")
+    .replace(/\bcos\(pi\)/g, "-1")
+    .replace(/\btan\(pi\)/g, "0")
+    .replace(/\bsin\(pi \/ 2\)/g, "1")
+    .replace(/\bcos\(pi \/ 2\)/g, "0")
+    .replace(/\btan\(pi \/ 4\)/g, "1")
+    .replace(/\bsin\(pi \/ 4\)/g, "sqrt(2)/2")
+    .replace(/\bcos\(pi \/ 4\)/g, "sqrt(2)/2");
+}
+
 function simplifyExpr(expr: string): string {
   try {
     // Keep logarithms of numeric constants symbolic, e.g. 2^x / ln 2, because
     // exact answers are preferred over decimal approximations in this app.
     if (/log\(\s*\d/.test(expr)) return expr;
-    return simplify(expr).toString();
+    const firstPass = simplify(expr).toString();
+    const exactTrigPass = simplifyTrigConstants(firstPass);
+    return simplify(exactTrigPass).toString();
   } catch {
     return expr;
   }

@@ -30,7 +30,7 @@ export default function Navbar({ activeSection, onNavigate }: NavbarProps) {
     { id: "part1", label: t.navPart1, route: "/" },
     { id: "definite", label: t.navDefinite, route: "/definite" },
     { id: "formulae", label: t.navPart2, route: "/formulae" },
-    { id: "part3", label: t.navPart3, route: "/" },
+    { id: "part4", label: t.navPart3, route: "/multi" },
   ];
 
   const handleNav = (id: string, route: string) => {

@@ -9,6 +9,7 @@ import { LangProvider } from "./contexts/LangContext";
 import Home from "./pages/Home";
 import DefiniteIntegral from "./pages/DefiniteIntegral";
 import ReferenceFormulae from "./pages/ReferenceFormulae";
+import MultiProblemMode from "./pages/MultiProblemMode";
 
 // useHashLocation makes routing work on GitHub Pages (no server-side rewrites needed).
 // On Vercel, hash routing also works fine — the URL will be /#/ instead of /
@@ -21,6 +22,7 @@ function AppRouter() {
         <Route path={"/"} component={Home} />
         <Route path={"/definite"} component={DefiniteIntegral} />
         <Route path={"/formulae"} component={ReferenceFormulae} />
+        <Route path={"/multi"} component={MultiProblemMode} />
         <Route path={"/404"} component={NotFound} />
         <Route component={NotFound} />
       </Switch>
