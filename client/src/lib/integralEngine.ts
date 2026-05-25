@@ -18,6 +18,28 @@ export interface IntegralResult {
   variableLatex?: string;
 }
 
+export interface DefiniteIntegralResult {
+  input: string;
+  normalized: string;
+  lower: string;
+  upper: string;
+  lowerLatex: string;
+  upperLatex: string;
+  status: IntegralStatus;
+  integrandLatex: string;
+  antiderivativeLatex?: string;
+  valueExpr?: string;
+  valueLatex?: string;
+  method: string;
+  methodZh: string;
+  stepsLatex: string[];
+  hintEn?: string;
+  hintZh?: string;
+  variable?: string;
+  variableLatex?: string;
+  indefinite?: IntegralResult;
+}
+
 interface Integrated {
   expr: string;
   method: string;
@@ -301,6 +323,14 @@ function maybeParenthesize(expr: string): string {
   if (new RegExp(`^[${GREEK_LOWER}]+$`).test(s)) return s;
   if (/^[A-Za-z]+\(.+\)$/.test(s)) return s;
   return `(${s})`;
+}
+
+function substituteVariable(expr: string, variable: string, replacement: string): string {
+  const replacementNode = parse(replacement);
+  return (parse(expr) as any).transform((node: AnyNode) => {
+    if (node.type === "SymbolNode" && (node as any).name === variable) return replacementNode;
+    return node;
+  }).toString();
 }
 
 function multiplyExpr(a: string, b: string): string {
@@ -1397,6 +1427,131 @@ export function calculateIntegral(input: string, preferredVariable?: string): In
     };
   }
 }
+
+export function calculateDefiniteIntegral(input: string, lowerInput: string, upperInput: string, preferredVariable?: string): DefiniteIntegralResult {
+  const normalized = preprocess(input);
+  const lower = preprocess(lowerInput);
+  const upper = preprocess(upperInput);
+  const invalidBase = {
+    input,
+    normalized,
+    lower,
+    upper,
+    lowerLatex: lower ? toLatex(lower) : "",
+    upperLatex: upper ? toLatex(upper) : "",
+    integrandLatex: normalized ? toLatex(normalized) : "",
+    stepsLatex: [] as string[],
+  };
+
+  if (!normalized || !lower || !upper) {
+    return {
+      ...invalidBase,
+      status: "invalid",
+      method: "invalid input",
+      methodZh: "輸入無效",
+      hintEn: "Please enter an integrand, a lower limit, and an upper limit.",
+      hintZh: "請輸入被積函數、下限及上限。",
+    };
+  }
+
+  try {
+    const node = parse(normalized);
+    const detected = detectVariable(node, preferredVariable ? preprocess(preferredVariable) : undefined);
+    if (detected === "__multiple__" || !detected) {
+      return {
+        ...invalidBase,
+        status: "unsupported",
+        method: "ambiguous variable",
+        methodZh: "積分變數不明確",
+        hintEn: "The integrand contains more than one variable. Please use a single integration variable, such as x, t, y, α, β, θ, or φ.",
+        hintZh: "被積函數含有多於一個變數。請使用單一積分變數，例如 x、t、y、α、β、θ 或 φ。",
+      };
+    }
+
+    const ctx: IntegrationContext = { variable: detected, depth: 0 };
+    if (hasVariable(lower, ctx) || hasVariable(upper, ctx)) {
+      return {
+        ...invalidBase,
+        status: "unsupported",
+        method: "variable limits are not supported",
+        methodZh: "暫不支援含積分變數的上下限",
+        variable: detected,
+        variableLatex: variableLatex(detected),
+        hintEn: "For this student version, the limits should be constants, for example 0, 1, 2, pi/2, or e.",
+        hintZh: "學生版定積分上下限請使用常數，例如 0、1、2、pi/2 或 e。",
+      };
+    }
+
+    const indefinite = calculateIntegral(normalized, detected);
+    if (indefinite.status !== "ok" || !indefinite.antiderivative) {
+      return {
+        ...invalidBase,
+        status: indefinite.status,
+        method: indefinite.method,
+        methodZh: indefinite.methodZh,
+        stepsLatex: indefinite.stepsLatex,
+        hintEn: indefinite.hintEn ?? "The corresponding indefinite integral is not supported yet, so the definite integral cannot be evaluated automatically.",
+        hintZh: indefinite.hintZh ?? "系統暫未支援相應的不定積分，因此未能自動計算此定積分。",
+        variable: detected,
+        variableLatex: variableLatex(detected),
+        indefinite,
+      };
+    }
+
+    const F = indefinite.antiderivative;
+    const upperSub = simplifyExpr(substituteVariable(F, detected, `(${upper})`));
+    const lowerSub = simplifyExpr(substituteVariable(F, detected, `(${lower})`));
+    const valueExpr = simplifyExpr(`(${upperSub})-(${lowerSub})`);
+    const vLatex = variableLatex(detected);
+    const valueLatex = toLatex(valueExpr);
+    const antiderivativeLatex = toLatex(F);
+    const stepsLatex = [
+      `F(${vLatex})=${antiderivativeLatex}`,
+      `\int_{${toLatex(lower)}}^{${toLatex(upper)}} ${toLatex(normalized)}\,d${vLatex}=F\left(${toLatex(upper)}\right)-F\left(${toLatex(lower)}\right)`,
+      `=${toLatex(upperSub)}-\left(${toLatex(lowerSub)}\right)`,
+      `=${valueLatex}`,
+    ];
+
+    return {
+      input,
+      normalized,
+      lower,
+      upper,
+      lowerLatex: toLatex(lower),
+      upperLatex: toLatex(upper),
+      status: "ok",
+      integrandLatex: toLatex(normalized),
+      antiderivativeLatex,
+      valueExpr,
+      valueLatex,
+      method: `definite integral using ${indefinite.method}`,
+      methodZh: `利用「${indefinite.methodZh}」先求原函數，再代入上下限`,
+      stepsLatex,
+      variable: detected,
+      variableLatex: vLatex,
+      indefinite,
+    };
+  } catch {
+    return {
+      ...invalidBase,
+      status: "invalid",
+      method: "invalid input",
+      methodZh: "輸入無效",
+      hintEn: "The definite integral could not be parsed. Use * for multiplication, ^ for powers, and constant limits such as 0, 1, 2 or pi/2.",
+      hintZh: "系統未能讀取此定積分。請使用 * 表示乘法、^ 表示冪次，並使用常數上下限如 0、1、2 或 pi/2。",
+    };
+  }
+}
+
+export const definiteIntegralExamples = [
+  { expression: "x^2", lower: "0", upper: "2" },
+  { expression: "sin(x)", lower: "0", upper: "pi" },
+  { expression: "cos(2*x)", lower: "0", upper: "pi/4" },
+  { expression: "sec(x)^2", lower: "0", upper: "pi/4" },
+  { expression: "2^x", lower: "0", upper: "3" },
+  { expression: "log(x,2)", lower: "1", upper: "2" },
+  { expression: "θ*sin(θ)", lower: "0", upper: "pi" },
+];
 
 export const integralExamples = [
   "x^2 + 3*x - 1",

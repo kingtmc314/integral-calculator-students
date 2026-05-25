@@ -5,6 +5,7 @@
 // Mobile: hamburger menu with full-screen drawer
 // ============================================================
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { useLang } from "@/contexts/LangContext";
 import { Menu, X, Sigma } from "lucide-react";
 
@@ -15,6 +16,7 @@ interface NavbarProps {
 
 export default function Navbar({ activeSection, onNavigate }: NavbarProps) {
   const { t, toggleLang } = useLang();
+  const [, setLocation] = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -25,13 +27,19 @@ export default function Navbar({ activeSection, onNavigate }: NavbarProps) {
   }, []);
 
   const sections = [
-    { id: "part1", label: t.navPart1 },
-    { id: "part2", label: t.navPart2 },
-    { id: "part3", label: t.navPart3 },
+    { id: "part1", label: t.navPart1, route: "/" },
+    { id: "definite", label: t.navDefinite, route: "/definite" },
+    { id: "formulae", label: t.navPart2, route: "/formulae" },
+    { id: "part3", label: t.navPart3, route: "/" },
   ];
 
-  const handleNav = (id: string) => {
-    onNavigate(id);
+  const handleNav = (id: string, route: string) => {
+    if (route === "/") {
+      setLocation("/");
+      window.setTimeout(() => onNavigate(id), 0);
+    } else {
+      setLocation(route);
+    }
     setMenuOpen(false);
   };
 
@@ -66,14 +74,14 @@ export default function Navbar({ activeSection, onNavigate }: NavbarProps) {
               {sections.map((s, i) => (
                 <button
                   key={s.id}
-                  onClick={() => handleNav(s.id)}
+                  onClick={() => handleNav(s.id, s.route)}
                   className={`relative px-3 py-1.5 text-sm rounded-full transition-all duration-200 ${
                     activeSection === s.id
                       ? "text-[#C8A45D] bg-[#C8A45D]/10"
                       : "text-[#F4EDE0]/70 hover:text-[#F4EDE0] hover:bg-white/7"
                   }`}
                 >
-                  <span className="text-[#7CA7D9] text-xs mr-1 font-mono">0{i + 1}</span>
+                    <span className="text-[#7CA7D9] text-xs mr-1 font-mono">0{i + 1}</span>
                   {s.label}
                   {activeSection === s.id && (
                     <span className="absolute bottom-0 left-3 right-3 h-0.5 bg-[#C8A45D] rounded-full" />
@@ -114,7 +122,7 @@ export default function Navbar({ activeSection, onNavigate }: NavbarProps) {
             {sections.map((s, i) => (
               <button
                 key={s.id}
-                onClick={() => handleNav(s.id)}
+                onClick={() => handleNav(s.id, s.route)}
                 className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 ${
                   activeSection === s.id
                     ? "text-[#C8A45D] bg-[#C8A45D]/10"
