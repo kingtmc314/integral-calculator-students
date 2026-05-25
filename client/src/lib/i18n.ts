@@ -8,10 +8,10 @@ export type Lang = "en" | "zh";
 export const translations = {
   en: {
     // ── Nav ──────────────────────────────────────────────────
-    appTitle: "Integral Calculator",
+    appTitle: "Indefinite Integration",
     appSubtitle: "HKDSE M2 Student Tool",
-    navPart1: "Calculator",
-    navDefinite: "Definite",
+    navPart1: "Indefinite Integration",
+    navDefinite: "Definite Integration",
     navPart2: "Formulae",
     navPart3: "Image & Multi-part",
     langToggle: "中文",
@@ -102,7 +102,7 @@ export const translations = {
 
     // ── Integral App ───────────────────────────────────────────
     integralHeroDesc: "Calculate indefinite integrals using HKDSE M2 methods only. The app auto-detects one integration variable, chooses suitable methods such as long division, substitution and by parts, and supports x, t, y and lowercase Greek letters such as α, β, θ and φ. By convention, ln is natural log, bare log is common log base 10, and other bases use change of base.",
-    integralInputTitle: "Indefinite Integral",
+    integralInputTitle: "Indefinite Integration",
     integralInputDesc: "Enter an expression with one variable. Use * for multiplication and ^ for powers. Write ln(x) for natural log, log(x) for common log, log(x,b) for base b, and sec(x)^2 for (sec x)^2; sec(x^2) means sec of x².",
     integrand: "Integrand",
     integrandHint: "e.g. ln(x), log(x), 2^x, sec(x)^2, (x^3+1)/(x+1), sin(log(x)), cos(sqrt(x)), θ*sin(θ)",

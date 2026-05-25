@@ -283,6 +283,33 @@ export default function Home() {
 
         <div className="h-px bg-gradient-to-r from-transparent via-[#C8A45D]/30 to-transparent my-6" />
 
+        <Card className="p-5 sm:p-6 mb-8">
+          <div className="flex flex-col gap-5">
+            <div>
+              <p className="text-[#7CA7D9] text-xs uppercase tracking-[0.24em] mb-2">{lang === "zh" ? "頁面簡介" : "Page guide"}</p>
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#F4EDE0] leading-tight tracking-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                {lang === "zh" ? "如何使用不定積分頁面" : "How to use the Indefinite Integration page"}
+              </h2>
+              <p className="text-[#F4EDE0]/62 text-sm sm:text-base mt-2 leading-relaxed max-w-4xl">
+                {lang === "zh" ? "本頁適合練習 HKDSE M2 常見的不定積分題型。你只需要輸入被積函數，系統會自動偵測變數、選擇合適方法，並以精確 LaTeX 顯示答案、方法和主要步驟。" : "This page is for practising HKDSE M2 indefinite-integration questions. Enter the integrand only; the app detects the variable, chooses a suitable supported method, and displays the exact answer, method and main working in LaTeX."}
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                lang === "zh" ? { title: "1. 輸入被積函數", body: "例如 ln(x)、log(x,2)、2^x、sec(x)^2 或 θ*sin(θ)。乘法請用 *，冪次請用 ^。" } : { title: "1. Enter the integrand", body: "Use forms such as ln(x), log(x,2), 2^x, sec(x)^2 or θ*sin(θ). Type * for multiplication and ^ for powers." },
+                lang === "zh" ? { title: "2. 查看預覽", body: "LaTeX 預覽會先顯示你輸入的積分，方便檢查括號、變數和函數次方是否正確。" } : { title: "2. Check the preview", body: "The LaTeX preview shows the integral before calculation, helping you check brackets, variables and function powers." },
+                lang === "zh" ? { title: "3. 閱讀步驟", body: "結果會列出方法、答案和主要推導。答案包含任意常數 C，並盡量保持精確形式。" } : { title: "3. Read the working", body: "The result shows the method, answer and key derivation. Answers include the arbitrary constant C and remain exact where supported." },
+                lang === "zh" ? { title: "4. 練習與例子", body: "可按範例快速測試，或使用隨機練習輸入自己的原函數答案並即時檢查。" } : { title: "4. Practise", body: "Use the example chips for quick tests, or try random practice and enter your own antiderivative for instant checking." },
+              ].map((item) => (
+                <div key={item.title} className="rounded-2xl border border-[#F4EDE0]/10 bg-[#080B13]/45 p-4 shadow-inner">
+                  <p className="text-[#C8A45D] text-sm font-semibold mb-2">{item.title}</p>
+                  <p className="text-[#F4EDE0]/58 text-sm leading-relaxed">{item.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+
         <Card id="part1" className="scroll-mt-24 p-5 sm:p-6 mb-8">
           <SectionHeader icon={<Wand2 className="w-5 h-5" />} title={t.integralInputTitle} desc={t.integralInputDesc} />
           <div className="grid gap-5 lg:grid-cols-[1fr_1fr]">

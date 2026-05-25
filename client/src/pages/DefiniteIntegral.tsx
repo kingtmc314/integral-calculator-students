@@ -86,13 +86,40 @@ export default function DefiniteIntegral() {
             <Calculator className="w-8 h-8 sm:w-10 sm:h-10 text-[#080B13]" strokeWidth={2.5} />
           </div>
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-[#F4EDE0] mb-3 leading-tight tracking-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-            {lang === "zh" ? "定積分計算器" : "Definite Integral Calculator"}
+            {lang === "zh" ? "定積分" : "Definite Integration"}
           </h1>
           <p className="text-[#C8A45D] text-xs sm:text-sm font-semibold tracking-[0.28em] uppercase mb-4">HKDSE M2 Student Tool</p>
           <p className="text-[#F4EDE0]/68 text-sm sm:text-base max-w-3xl mx-auto leading-relaxed">
             {lang === "zh" ? "沿用不定積分頁面的同一套符號處理：先以 HKDSE M2 方法求原函數 F，然後按牛頓—萊布尼茲公式計算 F(b)-F(a)，所有支援結果均以精確 LaTeX 顯示。" : "Uses the same symbolic engine as the indefinite-integral page: first find an HKDSE M2 antiderivative F, then apply the Newton–Leibniz formula F(b) − F(a), with exact LaTeX output."}
           </p>
         </div>
+
+        <Card className="p-5 sm:p-6 mb-8">
+          <div className="flex flex-col gap-5">
+            <div>
+              <p className="text-[#7CA7D9] text-xs uppercase tracking-[0.24em] mb-2">{lang === "zh" ? "頁面簡介" : "Page guide"}</p>
+              <h2 className="text-2xl sm:text-3xl font-bold text-[#F4EDE0] leading-tight tracking-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                {lang === "zh" ? "如何使用定積分頁面" : "How to use the Definite Integration page"}
+              </h2>
+              <p className="text-[#F4EDE0]/62 text-sm sm:text-base mt-2 leading-relaxed max-w-4xl">
+                {lang === "zh" ? "本頁用同一套不定積分引擎先求原函數，再代入上、下限計算定積分。它適合需要精確值和清楚步驟的 HKDSE M2 題目，而不是只給小數近似。" : "This page uses the same indefinite-integration engine to find an antiderivative first, then substitutes the upper and lower limits. It is designed for HKDSE M2 questions that require exact values and clear working, not merely decimal approximations."}
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                lang === "zh" ? { title: "1. 輸入被積函數", body: "例如 x^2、sin(x)、log(x,2) 或 sec(x)^2。請保持單一積分變數。" } : { title: "1. Enter the integrand", body: "Use examples such as x^2, sin(x), log(x,2) or sec(x)^2. Keep to one integration variable." },
+                lang === "zh" ? { title: "2. 輸入上下限", body: "上下限需為常數，例如 0、1、2、pi/2 或 e。系統會以精確值處理支援的常數。" } : { title: "2. Enter the limits", body: "Limits should be constants such as 0, 1, 2, pi/2 or e. Supported constants are handled exactly." },
+                lang === "zh" ? { title: "3. 檢查公式", body: "預覽會顯示完整的定積分記號，方便你在計算前確認上下限和被積函數。" } : { title: "3. Check the formula", body: "The preview shows the full definite-integral notation so you can verify the limits and integrand before calculating." },
+                lang === "zh" ? { title: "4. 閱讀結果", body: "結果會展示原函數 F、F(b)-F(a) 的代入過程，以及最終精確答案。" } : { title: "4. Read the result", body: "The result shows the antiderivative F, the substitution F(b)-F(a), and the final exact value." },
+              ].map((item) => (
+                <div key={item.title} className="rounded-2xl border border-[#F4EDE0]/10 bg-[#080B13]/45 p-4 shadow-inner">
+                  <p className="text-[#C8A45D] text-sm font-semibold mb-2">{item.title}</p>
+                  <p className="text-[#F4EDE0]/58 text-sm leading-relaxed">{item.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
 
         <Card className="p-5 sm:p-6 mb-8">
           <div className="flex flex-col sm:flex-row sm:items-start gap-4 mb-6">
