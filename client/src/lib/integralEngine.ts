@@ -45,6 +45,7 @@ interface Integrated {
   method: string;
   methodZh: string;
   steps: string[];
+  exactLatex?: string;
 }
 
 interface IntegrationContext {
@@ -1243,6 +1244,19 @@ function sqrtExpr(inner: string): string {
   return `sqrt(${inner})`;
 }
 
+function isPerfectSquareInteger(n: number): boolean {
+  const root = Math.sqrt(n);
+  return Number.isInteger(root);
+}
+
+function exactSqrtExpr(n: number): string {
+  return isPerfectSquareInteger(n) ? String(Math.sqrt(n)) : `sqrt(${n})`;
+}
+
+function exactSqrtLatex(n: number): string {
+  return isPerfectSquareInteger(n) ? toLatex(String(Math.sqrt(n))) : `\\sqrt{${toLatex(String(n))}}`;
+}
+
 function substitutionAngle(ctx: IntegrationContext): string {
   return ctx.variable === "θ" || ctx.variable === "theta" ? "φ" : "θ";
 }
@@ -1254,8 +1268,10 @@ function tryTrigSubstitution(node: AnyNode, ctx: IntegrationContext): Integrated
   const angle = substitutionAngle(ctx);
   const angleLatex = variableLatex(angle);
 
-  const reciprocalDenominator = node.type === "OperatorNode" && (node as any).op === "/" && (node as any).args[0].toString() === "1"
-    ? ((node as any).args[1] as AnyNode)
+  const divisionNode = node.type === "OperatorNode" && (node as any).op === "/" ? node as any : null;
+  const reciprocalNumerator = divisionNode ? divisionNode.args[0].toString() : "1";
+  const reciprocalDenominator = divisionNode && !hasVariable(reciprocalNumerator, ctx)
+    ? (divisionNode.args[1] as AnyNode)
     : null;
 
   if (reciprocalDenominator) {
@@ -1264,20 +1280,27 @@ function tryTrigSubstitution(node: AnyNode, ctx: IntegrationContext): Integrated
 
     const a2ForAtan = detectSquareConstant(denomText, (a2) => `${a2}+(${v})^2`);
     if (a2ForAtan !== null) {
-      const a = Math.sqrt(a2ForAtan);
-      const aLatex = toLatex(String(a));
-      const result = divideExpr(`atan((${v})/${a})`, String(a));
+      const numerator = simplifyExpr(reciprocalNumerator);
+      const aExpr = exactSqrtExpr(a2ForAtan);
+      const aLatex = exactSqrtLatex(a2ForAtan);
+      const numeratorLatex = toLatex(numerator);
+      const coefficientLatex = isOne(numerator) ? "" : `${numeratorLatex}\\cdot `;
+      const result = isOne(numerator)
+        ? `atan((${v})/(${aExpr}))/(${aExpr})`
+        : `(${numerator})*atan((${v})/(${aExpr}))/(${aExpr})`;
+      const exactLatex = `\\frac{${isOne(numerator) ? "1" : numeratorLatex}}{${aLatex}}\\tan^{-1}\\left(\\frac{${vl}}{${aLatex}}\\right)`;
       return {
         expr: result,
-        method: "trigonometric substitution",
-        methodZh: "三角代換法",
+        method: "trigonometric substitution / arctangent rule",
+        methodZh: "三角代換法／反正切公式",
+        exactLatex,
         steps: [
           `${vl}=${aLatex}\\tan ${angleLatex},\\quad ${dVar(ctx)}=${aLatex}\\sec^2 ${angleLatex}\\,d${angleLatex}`,
           `${toLatex(`${a2ForAtan}+(${v})^2`)}=${toLatex(String(a2ForAtan))}\\sec^2 ${angleLatex}`,
-          `${intLatex(expr, ctx)}=\\int\\frac{${aLatex}\\sec^2 ${angleLatex}}{${toLatex(String(a2ForAtan))}\\sec^2 ${angleLatex}}\\,d${angleLatex}`,
-          `${intLatex(expr, ctx)}=\\frac{1}{${aLatex}}${angleLatex}+C`,
+          `${intLatex(expr, ctx)}=\\int\\frac{${coefficientLatex}${aLatex}\\sec^2 ${angleLatex}}{${toLatex(String(a2ForAtan))}\\sec^2 ${angleLatex}}\\,d${angleLatex}`,
+          `${intLatex(expr, ctx)}=\\frac{${isOne(numerator) ? "1" : numeratorLatex}}{${aLatex}}${angleLatex}+C`,
           `${angleLatex}=\\tan^{-1}\\left(\\frac{${vl}}{${aLatex}}\\right)`,
-          `${intLatex(expr, ctx)}=${toLatex(result)}+C`,
+          `${intLatex(expr, ctx)}=${exactLatex}+C`,
         ],
       };
     }
@@ -1386,13 +1409,14 @@ export function calculateIntegral(input: string, preferredVariable?: string): In
     }
     const ctx: IntegrationContext = { variable: detected, depth: 0 };
     const integrated = integrateNode(node, ctx);
-    const simplifiedAnswer = simplifyExpr(integrated.expr);
+    const preserveExactForm = integrated.method.includes("arctangent rule");
+    const simplifiedAnswer = preserveExactForm ? integrated.expr : simplifyExpr(integrated.expr);
     return {
       input,
       normalized,
       status: "ok",
       integrandLatex: toLatex(normalized),
-      answerLatex: `${toLatex(simplifiedAnswer)}+C`,
+      answerLatex: `${integrated.exactLatex ?? toLatex(simplifiedAnswer)}+C`,
       antiderivative: simplifiedAnswer,
       method: integrated.method,
       methodZh: integrated.methodZh,
@@ -1499,16 +1523,23 @@ export function calculateDefiniteIntegral(input: string, lowerInput: string, upp
     }
 
     const F = indefinite.antiderivative;
-    const upperSub = simplifyExpr(substituteVariable(F, detected, `(${upper})`));
-    const lowerSub = simplifyExpr(substituteVariable(F, detected, `(${lower})`));
-    const valueExpr = simplifyExpr(`(${upperSub})-(${lowerSub})`);
+    const preserveExactArctan = indefinite.method.includes("arctangent rule");
+    const upperSub = preserveExactArctan
+      ? substituteVariable(F, detected, `(${upper})`)
+      : simplifyExpr(substituteVariable(F, detected, `(${upper})`));
+    const lowerSub = preserveExactArctan
+      ? substituteVariable(F, detected, `(${lower})`)
+      : simplifyExpr(substituteVariable(F, detected, `(${lower})`));
+    const valueExpr = preserveExactArctan ? `(${upperSub})-(${lowerSub})` : simplifyExpr(`(${upperSub})-(${lowerSub})`);
     const vLatex = variableLatex(detected);
     const valueLatex = toLatex(valueExpr);
-    const antiderivativeLatex = toLatex(F);
+    const antiderivativeLatex = preserveExactArctan && indefinite.answerLatex
+      ? indefinite.answerLatex.replace(/\+C$/, "")
+      : toLatex(F);
     const stepsLatex = [
       `F(${vLatex})=${antiderivativeLatex}`,
-      `\int_{${toLatex(lower)}}^{${toLatex(upper)}} ${toLatex(normalized)}\,d${vLatex}=F\left(${toLatex(upper)}\right)-F\left(${toLatex(lower)}\right)`,
-      `=${toLatex(upperSub)}-\left(${toLatex(lowerSub)}\right)`,
+      `\\int_{${toLatex(lower)}}^{${toLatex(upper)}} ${toLatex(normalized)}\\,d${vLatex}=F\\left(${toLatex(upper)}\\right)-F\\left(${toLatex(lower)}\\right)`,
+      `=${toLatex(upperSub)}-\\left(${toLatex(lowerSub)}\\right)`,
       `=${valueLatex}`,
     ];
 
