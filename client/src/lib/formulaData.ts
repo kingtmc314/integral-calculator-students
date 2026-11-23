@@ -232,13 +232,25 @@ export const FORMULAE: FormulaItem[] = [
   {
     categoryEn: "Integration by parts and mixed methods",
     categoryZh: "分部積分及混合技巧",
+    titleEn: "Substitution followed by trigonometric substitution",
+    titleZh: "一般代換後再作三角代換",
+    latex:
+      "\\int\\frac{x}{x^4+4}\\,dx=\\frac14\\tan^{-1}\\!\\left(\\frac{x^2}{2}\\right)+C",
+    noteEn:
+      "First set u=x², du=2x dx; then set u=2 tan θ. u is the new variable and θ the introduced angle. This route uses no integration by parts.",
+    noteZh:
+      "先令 u=x²、du=2x dx，再令 u=2 tan θ。u 是新變數，θ 是引入的角；這條路線毋須分部積分。",
+  },
+  {
+    categoryEn: "Integration by parts and mixed methods",
+    categoryZh: "分部積分及混合技巧",
     titleEn: "Method-selection principle",
     titleZh: "方法選擇原則",
     latex: "\\int f(x)\\,dx",
     noteEn:
-      "This keeps calculator behaviour aligned with student-facing HKDSE M2 methods.",
+      "Combine supported M2 methods as the structure requires, rather than choosing only one. Count integration by parts across the whole derivation, including substituted and split integrals: at most two uses. Prefer a simpler valid route when no by-parts step is needed.",
     noteZh:
-      "先試直接公式與有理化簡；只有辨認到標準型後才代換，以符合學生使用的 M2 方法。",
+      "可按結構組合已支援的 M2 方法，不限只選一種。代換及拆項後仍共用整條推導的分部積分預算，累計最多兩次；毋須分部時，優先使用較簡單的合法路線。",
   },
 
   {

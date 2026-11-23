@@ -1968,3 +1968,29 @@ textarea {
     gap: 7px;
   }
 }
+
+.method-budget {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(42, 72, 49, 0.12);
+  color: #4c6840;
+  font-size: 11px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.result-stack {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.scene-viewport > div {
+  min-width: 0;
+}
+.hint-math {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
+  padding: 2px 0;
+}

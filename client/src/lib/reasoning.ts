@@ -25,6 +25,24 @@ export function isDefinite(r: Calculation): r is DefiniteIntegralResult {
 type Focus = { start: number; end: number; role?: string };
 type Scan = { equals: number[]; commas: number[]; balanced: boolean };
 
+function partsRoles(latex: string): "uv" | "pq" | undefined {
+  const roles = Array.from(
+    latex.matchAll(/(?:^\s*|,\s*\\quad\s*)(u|du|dv|v|p|dp|dq|q)\s*=/g),
+    m => m[1]
+  );
+  if (
+    (roles.includes("p") && roles.includes("dq")) ||
+    (roles.includes("dp") && roles.includes("q"))
+  )
+    return "pq";
+  if (
+    (roles.includes("u") && roles.includes("dv")) ||
+    (roles.includes("du") && roles.includes("v"))
+  )
+    return "uv";
+  return undefined;
+}
+
 /** Locate only structural boundaries, never a character inside a TeX group.
  * Paired \\left/\\right delimiters are consumed as tokens, including escaped braces.
  * Unfamiliar environments/delimiters deliberately fall back to the whole line.
@@ -76,7 +94,7 @@ function chooseFocus(latex: string): Focus {
   const scan = scanLatex(latex);
   if (!scan.balanced || !scan.equals.length) return whole;
   // Prefer the chosen function / new variable, then its differential relation.
-  for (const role of ["u", "du", "dv", "v"]) {
+  for (const role of ["u", "p", "du", "dp", "dv", "dq", "v", "q"]) {
     for (const eq of scan.equals) {
       const previousComma = scan.commas.filter(i => i < eq).at(-1) ?? -1;
       const lhs = latex
@@ -113,14 +131,26 @@ function highlight(
   const focus = chooseFocus(latex);
   const focusLatex = latex.slice(focus.start, focus.end);
   const wholeLine = focus.start === 0 && focus.end === latex.length;
+  const parts = partsRoles(latex);
   const labels: Record<string, [string, string]> = {
     u: ["u 的選定表達式", "The expression chosen for u"],
     du: ["du 的微分關係", "The differential relation for du"],
-    dv: [
-      "dv：待積分的部分連同微分",
-      "dv: the part to integrate, including the differential",
+    dv: parts
+      ? [
+          "dv：待積分的部分連同微分",
+          "dv: the part to integrate, including the differential",
+        ]
+      : ["dv 的微分關係", "The differential relation for dv"],
+    v: parts
+      ? ["v：dv 的一個原函數", "v: an antiderivative of dv"]
+      : ["v 的設定表達式", "The expression defined for v"],
+    p: ["p：選定要微分的函數", "p: the function chosen to differentiate"],
+    dp: ["dp 的微分關係", "The differential relation for dp"],
+    dq: [
+      "dq：待積分的部分連同微分",
+      "dq: the part to integrate, including the differential",
     ],
-    v: ["v：dv 的一個原函數", "v: an antiderivative of dv"],
+    q: ["q：dq 的一個原函數", "q: an antiderivative of dq"],
   };
   const labelsForRole = focus.role ? labels[focus.role] : undefined;
   return {
@@ -139,13 +169,25 @@ function assignmentDetails(latex: string): [string[], string[]] {
   const zh: string[] = [],
     en: string[] = [];
   if (!scan.balanced) return [zh, en];
+  const parts = partsRoles(latex);
   const meanings: Record<string, [string, string]> = {
     u: ["本步定義的 u", "u as defined in this step"],
     du: ["本步 u 的微分 du", "the differential du of u in this step"],
-    dv: ["本步待積分的 dv", "dv to integrate in this step"],
-    v: [
-      "本步由 dv 得到的原函數 v",
-      "the antiderivative v obtained from dv in this step",
+    dv: parts
+      ? ["本步待積分的 dv", "dv to integrate in this step"]
+      : ["本步 v 的微分 dv", "the differential dv of v in this step"],
+    v: parts
+      ? [
+          "本步由 dv 得到的原函數 v",
+          "the antiderivative v obtained from dv in this step",
+        ]
+      : ["本步定義的 v", "v as defined in this step"],
+    p: ["本步選定要微分的 p", "p chosen to differentiate in this step"],
+    dp: ["本步 p 的微分 dp", "the differential dp of p in this step"],
+    dq: ["本步待積分的 dq", "dq to integrate in this step"],
+    q: [
+      "本步由 dq 得到的原函數 q",
+      "the antiderivative q obtained from dq in this step",
     ],
   };
   const assignments: [string[], string[]] = [[], []];
@@ -202,10 +244,20 @@ function explicitBounds(latex: string): [string, string] | undefined {
 }
 
 function methodReason(method: string): [string, string] {
+  if (/parts|cycle/.test(method) && /substitution/.test(method))
+    return [
+      "先作適合的代換，把積分化成較簡單的形式，再按需要用分部積分；可以組合方法，但分部積分的整題累計最多兩次，代換後不重新計數。",
+      "Use a suitable substitution to simplify the integral, then integration by parts if needed. Methods can be combined, but the whole derivation has at most two by-parts uses; substitution does not reset the count.",
+    ];
   if (/parts|cycle/.test(method))
     return [
-      "乘積可用分部積分：選容易微分的函數作 u，另一部分連同微分作 dv；本工具採用最多兩次分部積分。",
-      "For a product, choose a function convenient to differentiate as u and the remaining factor with its differential as dv. This tool uses at most two integrations by parts.",
+      "乘積可用分部積分：選容易微分的函數作 u，另一部分連同微分作 dv；可配合其他方法，但整題分部積分累計最多兩次。",
+      "For a product, choose a function convenient to differentiate as u and the remaining factor with its differential as dv. Combine other methods as needed, with at most two by-parts uses across the whole derivation.",
+    ];
+  if (/substitution.*(?:quadratic|trigonometric substitution)/.test(method))
+    return [
+      "先找內層函數，檢查其導數是否與外面因子只差常數倍；一般代換後，才對新變數的二次式作三角代換或代數分拆。",
+      "Identify an inner function whose derivative matches the outside factor up to a constant. First substitute; then use trigonometric substitution or algebraic decomposition on the quadratic in the new variable.",
     ];
   if (/trigonometric substitution|quadratic/.test(method))
     return [
@@ -252,6 +304,24 @@ export function reasoningScenes(result: Calculation): Scene[] {
     ? `${integral}=${result.valueLatex ?? ""}`
     : `${integral}=${result.answerLatex ?? ""}`;
   const scenes: Scene[] = [];
+  const partsCost =
+    result.partsCost ?? (definite ? result.indefinite?.partsCost : undefined);
+  const methodPolicy: [string[], string[]] = [
+    [
+      "可連續組合已支援的課程內方法；一般或三角代換不佔分部積分次數，代換及拆項亦不會重設整題累計。",
+    ],
+    [
+      "Supported curriculum methods can be composed. General or trigonometric substitution does not use the by-parts budget, and substitution or splitting terms does not reset the total.",
+    ],
+  ];
+  if (typeof partsCost === "number") {
+    methodPolicy[0].push(
+      `本條推導使用 ${partsCost} / 2 次分部積分；此數字是整題總次數，不是當前步驟編號。`
+    );
+    methodPolicy[1].push(
+      `This derivation uses ${partsCost} / 2 integrations by parts; this is the whole-question total, not the current step number.`
+    );
+  }
   const add = (
     latex: string,
     stage: number,
@@ -295,7 +365,10 @@ export function reasoningScenes(result: Calculation): Scene[] {
     0,
     ["先看結構，選擇方法", "Recognise the structure"],
     methodReason(source.method),
-    originalBounds,
+    [
+      [...originalBounds[0], ...methodPolicy[0]],
+      [...originalBounds[1], ...methodPolicy[1]],
+    ],
     [
       "積分方法應依原式結構選擇，不能把乘積直接當成兩個積分相乘。",
       "Choose the method from the expression's structure; an integral of a product is not a product of integrals.",
@@ -315,11 +388,19 @@ export function reasoningScenes(result: Calculation): Scene[] {
     if (!key || seen.has(key)) continue;
     seen.add(key);
     const noIntegral = !/\\int/.test(latex);
-    const partsSetup =
-      noIntegral && /(?:^|,\s*\\quad\s*)(?:dv|v)\s*=/.test(latex);
-    const substitutionSetup =
-      noIntegral && /(?:^|,\s*\\quad\s*)(?:u|du)\s*=/.test(latex);
+    const partsScheme = partsRoles(latex);
+    const partsSetup = noIntegral && !!partsScheme;
+    const [partsP, partsQ] = partsScheme === "pq" ? ["p", "q"] : ["u", "v"];
     const angle = latex.match(/\\(?:theta|phi)/)?.[0];
+    const angleSetup = noIntegral && !!angle && /\\(?:sin|cos|tan)/.test(latex);
+    const substitutionSymbol = latex.match(/^([a-z])\s*=/)?.[1];
+    const substitutionSetup =
+      noIntegral &&
+      !partsSetup &&
+      !angleSetup &&
+      (/(?:^|,\s*\\quad\s*)(?:u|du)\s*=/.test(latex) ||
+        (!!substitutionSymbol && substitutionSymbol !== vl));
+    const newVariable = substitutionSymbol ?? "u";
     const inverseAngle = noIntegral && /^\\(?:theta|phi)\s*=/.test(latex);
     const trigIdentity =
       noIntegral &&
@@ -390,22 +471,28 @@ export function reasoningScenes(result: Calculation): Scene[] {
           "Integration by parts: distinguish four roles",
         ],
         [
-          "u 是選定要微分的函數；dv 是其餘部分連同微分。求 du 與 v 後代入 uv−∫v du。",
-          "u is the function chosen to differentiate; dv is the remaining part with its differential. Find du and v, then use uv−∫v du.",
+          `${partsP} 是選定要微分的函數；d${partsQ} 是其餘部分連同微分。求 d${partsP} 與 ${partsQ} 後代入 ${partsP}${partsQ}−∫${partsQ} d${partsP}。`,
+          `${partsP} is the function chosen to differentiate; d${partsQ} is the remaining part with its differential. Find d${partsP} and ${partsQ}, then use ${partsP}${partsQ}−∫${partsQ} d${partsP}.`,
         ],
         [
           [
-            "u 不一定等於原變數，也不是一律待解的未知數；本行等式指定它是哪個函數。",
-            "du 是 u 的微分；v 是把 dv 積分得到的一個原函數。求 v 時可取常數為零，總答案最後只需一個 C。",
+            `${partsP} 不一定等於原變數，也不是一律待解的未知數；本行等式指定它是哪個函數。`,
+            `d${partsP} 是 ${partsP} 的微分；${partsQ} 是把 d${partsQ} 積分得到的一個原函數。求 ${partsQ} 時可取常數為零，總答案最後只需一個 C。`,
+            partsScheme === "pq"
+              ? "這裡用 p、q 表示分部角色，避免與前一次代換的新變數 u、v 混淆；它們不是新的積分變數。"
+              : "本步分部積分沿用整題累計次數，不因改寫函數而重設。",
           ],
           [
-            "u need not equal the original variable and is not automatically an unknown; the equality specifies the chosen function.",
-            "du is the differential of u; v is one antiderivative of dv. Choose its constant as zero and include one C in the final answer.",
+            `${partsP} need not equal the original variable and is not automatically an unknown; the equality specifies the chosen function.`,
+            `d${partsP} is the differential of ${partsP}; ${partsQ} is one antiderivative of d${partsQ}. Choose its constant as zero and include one C in the final answer.`,
+            partsScheme === "pq"
+              ? "p and q name the by-parts roles, avoiding a clash with earlier substitution variables u or v; they are not new integration variables."
+              : "This by-parts step uses the whole-question count; rewriting the function does not reset it.",
           ],
         ],
         [
-          "不要把 dv 當成 v，或把 du 當成導數而漏掉微分；公式的第二項是減號。",
-          "Do not confuse dv with v or omit the differential in du; the second term in the formula has a minus sign.",
+          `不要把 d${partsQ} 當成 ${partsQ}，或把 d${partsP} 當成導數而漏掉微分；公式的第二項是減號。`,
+          `Do not confuse d${partsQ} with ${partsQ} or omit the differential in d${partsP}; the second term in the formula has a minus sign.`,
         ]
       );
     } else if (inverseAngle) {
@@ -441,7 +528,7 @@ export function reasoningScenes(result: Calculation): Scene[] {
       );
     } else if (
       substitutionSetup ||
-      (noIntegral && angle && /d\\(?:theta|phi)|\\(?:sin|tan)/.test(latex))
+      (noIntegral && angle && /d\\(?:theta|phi)|\\(?:sin|cos|tan)/.test(latex))
     ) {
       add(
         latex,
@@ -457,15 +544,15 @@ export function reasoningScenes(result: Calculation): Scene[] {
         [
           [
             substitutionSetup
-              ? `u 是本次代換的新變數，由 ${variable} 的表達式定義；du 是 u 的微分。`
-              : `${angle ? `$${angle}$` : "代換角"} 是本次三角代換使用的角；以本行等式連結它與 ${variable}。`,
-            `d${variable} 必須連同函數一併轉換；由微分關係補回係數，不能只把括號內改名。`,
+              ? `${newVariable} 是本次代換的新變數；本行指定它與當前變數的關係，d${newVariable} 是其微分。`
+              : `${angle ? `$${angle}$` : "代換角"} 是本次三角代換引入的角；本行連結它與當前積分變數，後者可能已是前一次代換的新變數。`,
+            `原題的微分是 d${variable}；每次代換都須換掉當步的微分並保留係數，不能只把函數改名。`,
           ],
           [
             substitutionSetup
-              ? `u is the new substitution variable defined by an expression in ${variable}; du is its differential.`
-              : `${angle ? `$${angle}$` : "The angle"} is used for this trigonometric substitution; the equality relates it to ${variable}.`,
-            `Transform d${variable} as well as the function; use the differential relation to retain the coefficient, rather than merely renaming the inner expression.`,
+              ? `${newVariable} is the new substitution variable; this equality relates it to the current variable, and d${newVariable} is its differential.`
+              : `${angle ? `$${angle}$` : "The angle"} is introduced for this trigonometric substitution; the equality relates it to the current integration variable, which may itself come from an earlier substitution.`,
+            `Transform d${variable} and every subsequent differential at the appropriate step; retain the coefficient, rather than merely renaming the function.`,
           ],
         ],
         [
@@ -559,8 +646,8 @@ export function reasoningScenes(result: Calculation): Scene[] {
         /parts|cycle/.test(source.method);
       const titles: [string, string] = cycle
         ? [
-            "連結兩次分部積分的結果",
-            "Link the two integration-by-parts results",
+            "連結分部後的等式，移項整理",
+            "Link the by-parts relations and rearrange",
           ]
         : hasC
           ? ["求出本項的原函數", "Find the antiderivative of this term"]
@@ -576,8 +663,8 @@ export function reasoningScenes(result: Calculation): Scene[] {
         titles,
         cycle
           ? [
-              "把第二次分部的等式代回第一次，移項後解出原積分。",
-              "Substitute the second integration-by-parts relation into the first and rearrange to solve for the original integral.",
+              "利用分部後的等式或三角恆等式，把再次出現的原積分移到同一邊，解出原積分；移項本身不算另一次分部積分。",
+              "Use the by-parts relations or trigonometric identities, collect repeated occurrences of the original integral on one side and solve. Rearrangement itself is not another integration by parts.",
             ]
           : hasC
             ? [
@@ -602,7 +689,7 @@ export function reasoningScenes(result: Calculation): Scene[] {
                 : transformed
                   ? "若微分已變成 du 或代換角的微分，就對該新變數積分；最後須換回原變數。"
                   : "等號兩邊是同一個量；框內保留本行完整的有效表達式。",
-            "依實際步驟保留內層函數導數的係數；若用分部公式，第二項為 −∫v du。",
+            "依實際步驟保留內層函數導數的係數；若用分部公式，第二項為 −∫v du（或改用角色符號時的 −∫q dp）。",
           ],
           [
             cycle
@@ -612,7 +699,7 @@ export function reasoningScenes(result: Calculation): Scene[] {
                 : transformed
                   ? "If the differential is now du or that of a substitution angle, integrate with respect to that new variable and return to the original variable at the end."
                   : "Both sides represent the same quantity; the box retains a complete expression from this line.",
-            "Retain the inner-derivative coefficient shown; in integration by parts the second term is −∫v du.",
+            "Retain the inner-derivative coefficient shown; in integration by parts the second term is −∫v du (or −∫q dp with renamed roles).",
           ],
         ],
         [
@@ -644,12 +731,14 @@ export function reasoningScenes(result: Calculation): Scene[] {
     [
       [
         ...originalBounds[0],
+        ...methodPolicy[0],
         definite
           ? "若曾代換，最後的原函數已回到原積分變數；C 在端點相減時抵消。"
           : "C 可取任何常數，代表所有相差常數的原函數。",
       ],
       [
         ...originalBounds[1],
+        ...methodPolicy[1],
         definite
           ? "After substitution, the final antiderivative is back in the original variable; C cancels in endpoint subtraction."
           : "C may be any constant and represents all antiderivatives differing by a constant.",

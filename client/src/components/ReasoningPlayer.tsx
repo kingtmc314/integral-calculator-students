@@ -28,7 +28,11 @@ function HintText({ text }: { text: string }) {
         .split(/(\$[^$]+\$)/g)
         .map((part, i) =>
           part.startsWith("$") && part.endsWith("$") ? (
-            <KaTeXRenderer key={i} latex={part.slice(1, -1)} />
+            <KaTeXRenderer
+              key={i}
+              latex={part.slice(1, -1)}
+              className="hint-math"
+            />
           ) : (
             <span key={i}>{part}</span>
           )

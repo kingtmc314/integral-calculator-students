@@ -92,6 +92,7 @@ describe("bilingual reasoning metadata from actual engine steps", () => {
     "cos(sqrt(x))",
     "sqrt(3-x^2)",
     "sqrt(4+x^2)",
+    "x/(x^4+4)",
     "θ*sin(θ)",
   ])("renders all highlights securely: %s", expression => {
     const result = I(expression);
@@ -182,6 +183,61 @@ describe("bilingual reasoning metadata from actual engine steps", () => {
     expect(scene.thoughtEn).toContain("$F\\left(2\\right)-F\\left(0\\right)$");
     expect(scene.detailsEn.join(" ")).toContain("x=-2");
     expect(scene.detailsEn.join(" ")).toContain("lower endpoint is $x=0$");
+  });
+
+  it("explains a shared budget for substitution followed by two by-parts uses", () => {
+    const result = I("sin(ln(x))");
+    expect(result.partsCost).toBe(2);
+    const scenes = reasoningScenes(result);
+    expect(scenes[0].thoughtEn).toContain("substitution does not reset");
+    expect(scenes[0].detailsZh.join(" ")).toContain("2 / 2");
+    expect(scenes.at(-1)!.detailsEn.join(" ")).toContain(
+      "whole-question total"
+    );
+    scenes.forEach(assertScene);
+  });
+
+  it("distinguishes an intermediate substitution variable from the introduced angle", () => {
+    const result = fixture([
+      "w=x^2,\\quad dw=2x\\,dx",
+      "w=2\\tan\\theta,\\quad dw=2\\sec^2\\theta\\,d\\theta",
+    ]);
+    const scenes = reasoningScenes(result);
+    expect(scenes[1].detailsEn.join(" ")).toContain(
+      "w is the new substitution variable"
+    );
+    expect(scenes[2].detailsEn.join(" ")).toContain("earlier substitution");
+    expect(scenes[2].detailsZh.join(" ")).toContain("前一次代換");
+    scenes.forEach(assertScene);
+  });
+
+  it("explains p/dq/dp/q after substitution without counting rearrangement as another use", () => {
+    const result = I("2*x*sqrt(x^4+4)");
+    expect(result.status).toBe("ok");
+    expect(result.partsCost).toBe(1);
+    const scenes = reasoningScenes(result);
+    const setup = scenes.find(s => s.latex.startsWith("p="))!;
+    expect(setup.titleEn).toContain("four roles");
+    expect(setup.thoughtEn).toContain("p is the function chosen");
+    expect(setup.detailsEn.join(" ")).toContain(
+      "q is one antiderivative of dq"
+    );
+    expect(setup.detailsZh.join(" ")).toContain("避免與前一次代換");
+    const rearrange = scenes.find(s => s.latex.startsWith("2I="))!;
+    expect(rearrange.thoughtEn).toContain("not another integration by parts");
+    scenes.forEach(assertScene);
+  });
+
+  it("does not mistake a substitution named v for a by-parts antiderivative", () => {
+    const scenes = reasoningScenes(fixture(["v=x^2,\\quad dv=2x\\,dx"]));
+    expect(scenes[1].titleEn).toContain("new variable");
+    expect(scenes[1].detailsEn.join(" ")).toContain(
+      "v is the new substitution variable"
+    );
+    expect(scenes[1].detailsEn.join(" ")).not.toContain(
+      "antiderivative v obtained"
+    );
+    scenes.forEach(assertScene);
   });
 });
 

@@ -73,6 +73,8 @@ export default function CalculationResult({
     );
   const definite = isDefinite(result);
   const answer = definite ? result.valueLatex : result.answerLatex;
+  const partsCost =
+    result.partsCost ?? (definite ? result.indefinite?.partsCost : undefined);
   const equation = definite
     ? `\\int_{${result.lowerLatex}}^{${result.upperLatex}}${result.integrandLatex}\\,d${result.variableLatex ?? "x"}=${answer}`
     : `\\int ${result.integrandLatex}\\,d${result.variableLatex ?? "x"}=${answer}`;
@@ -108,6 +110,20 @@ export default function CalculationResult({
           <span>{lang === "zh" ? "方法" : "METHOD"}</span>
           <p>{lang === "zh" ? result.methodZh : result.method}</p>
         </div>
+        {typeof partsCost === "number" && (
+          <p
+            className="method-budget"
+            title={
+              lang === "zh"
+                ? "可組合方法；代換及拆項不重設分部積分的累計次數。"
+                : "Methods may be combined; substitutions and splitting terms do not reset the by-parts count."
+            }
+          >
+            {lang === "zh"
+              ? `本推導分部積分：${partsCost} / 2 次（整題累計）`
+              : `Integration by parts: ${partsCost} / 2 uses (whole derivation)`}
+          </p>
+        )}
       </section>
       <ReasoningPlayer
         key={`${result.normalized}-${definite ? result.lower + result.upper : ""}`}

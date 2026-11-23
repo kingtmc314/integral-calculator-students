@@ -174,8 +174,21 @@ export default function ReferenceFormulae() {
             </strong>
             <p>
               {lang === "zh"
-                ? "代數、三角及指數積分，代換、指定三角代換、分部積分與定積分的性質。分部積分最多使用兩次。"
-                : "Algebraic, trigonometric and exponential integration; substitution, specified trigonometric substitutions, integration by parts, and definite-integral properties. By parts is limited to two uses."}
+                ? "代數、三角及指數積分，代換、指定三角代換、分部積分與定積分性質可按需要組合，不限只用一種方法。整條推導的分部積分累計最多兩次；代換或拆項後不會重新計數。"
+                : "Combine algebraic, trigonometric and exponential rules, substitutions, specified trigonometric substitutions, integration by parts and definite-integral properties as needed. There is no one-method restriction. At most two uses of integration by parts are allowed across the entire derivation; substitutions and splitting terms do not reset the count."}
+            </p>
+            <div className="formula-box">
+              <KaTeXRenderer
+                latex={
+                  "z=a\\sin\\theta,\\quad z=a\\cos\\theta,\\quad z=a\\tan\\theta,\\quad a>0"
+                }
+                displayMode
+              />
+            </div>
+            <p>
+              {lang === "zh"
+                ? "三角代換只採用以上形式，按結構選擇適合的代換及角域。z 表示當步的積分變數；θ 是新引入的角。合法代換本身不佔分部積分次數。"
+                : "Use only these trigonometric substitution forms, with a suitable angle range. Here z is the current integration variable and θ is the introduced angle. A substitution itself does not use the by-parts budget."}
             </p>
           </div>
           <div>

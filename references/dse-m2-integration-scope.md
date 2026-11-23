@@ -17,3 +17,7 @@ This sheet supplies identities for the examination; the app's library is a broad
 ## Implementation policy
 
 Unsupported means the implemented method recogniser cannot safely handle an expression. It must not automatically claim that a question is outside the syllabus. No special functions, numerical quadrature, or improper integrals are used to fill symbolic-method gaps. Exact fractions, radicals, logarithms, e and pi are preserved. Selected denominator roots and trigonometric poles are checked before applying F(b)−F(a); domain checks are safeguards, not a general formal proof for arbitrary expressions.
+
+Methods may be composed, not restricted to a single technique per question. The entire successful derivation has a shared integration-by-parts budget of at most two uses; substitutions, changed variables, splitting terms and recursive remainder integrations do not reset it. Failed candidate routes do not consume the budget of a subsequently selected valid route. General substitutions and algebraic/trigonometric identities do not themselves count as integration by parts.
+
+As requested for this tool, trigonometric substitutions use only a sin(theta), a cos(theta) or a tan(theta), with a>0 and an appropriate angle domain. Any introduced variables and differential relationships must be explained, and the antiderivative must return to the original variable before the original definite limits are applied. For x/(x^4+4), u=x^2 followed by u=2 tan(theta) is a valid composition requiring zero integrations by parts.

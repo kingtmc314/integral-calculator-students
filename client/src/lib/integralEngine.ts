@@ -17,6 +17,8 @@ export interface IntegralResult {
   hintZh?: string;
   variable?: string;
   variableLatex?: string;
+  /** Total integrations by parts in the successful derivation (at most two). */
+  partsCost?: number;
 }
 
 export interface DefiniteIntegralResult {
@@ -39,6 +41,7 @@ export interface DefiniteIntegralResult {
   variable?: string;
   variableLatex?: string;
   indefinite?: IntegralResult;
+  partsCost?: number;
 }
 
 interface Integrated {
@@ -54,6 +57,8 @@ interface IntegrationContext {
   variable: string;
   depth: number;
   partsUsed?: number;
+  /** Variables already in use by outer substitutions; do not shadow them. */
+  reservedVariables?: string[];
 }
 
 class UnsupportedIntegral extends Error {
@@ -224,7 +229,7 @@ function formatCommonLogTex(tex: string): string {
 
 function formatFunctionPowerTex(tex: string): string {
   return tex.replace(
-    /\{(\\(?:sin|cos|tan|sec|csc|cot)\\left\((.*?)\\right\))\}\^\{([^{}]+)\}/g,
+    /\{(\\(?:sin|cos|tan|sec|csc|cot)\\left\(((?:(?!\\right).)*?)\\right\))\}\^\{([^{}]+)\}/g,
     (_match, fnWithArg: string, arg: string, power: string) => {
       const fn = fnWithArg.match(/^(\\(?:sin|cos|tan|sec|csc|cot))/)?.[1] ?? "";
       return `${fn}^{${power}}\\left(${arg}\\right)`;
@@ -253,7 +258,13 @@ function dVar(ctx: IntegrationContext): string {
 }
 
 function intLatex(expr: string, ctx: IntegrationContext): string {
-  return `\\int ${toLatex(expr)}\\,${dVar(ctx)}`;
+  const n = unwrapNode(parse(expr)) as any;
+  const sum =
+    n.type === "OperatorNode" &&
+    ["+", "-"].includes(n.op) &&
+    n.args.length === 2;
+  const tex = toLatex(expr);
+  return `\\int ${sum ? `\\left(${tex}\\right)` : tex}\\,${dVar(ctx)}`;
 }
 
 function simplifyTrigConstants(expr: string): string {
@@ -272,7 +283,38 @@ function simplifyTrigConstants(expr: string): string {
 }
 
 function simplifyExpr(expr: string): string {
-  return exactSimplify(expr);
+  try {
+    // Strip unit powers before exact constant protection (e^1 remains e, not
+    // an opaque protected e^1 distinct from e in an exact endpoint difference).
+    expr = (parse(expr) as any)
+      .transform((n: AnyNode) => {
+        if (n.type === "OperatorNode" && (n as any).op === "^") {
+          const [base, power] = (n as any).args as AnyNode[];
+          if (constantValue(power.toString()) === 1) return base;
+        }
+        return n;
+      })
+      .toString();
+  } catch {
+    /* Preserve existing parse/error handling. */
+  }
+  const simplified = exactSimplify(expr);
+  try {
+    const withoutUnits = (parse(simplified) as any)
+      .transform((n: AnyNode) => {
+        if (n.type === "OperatorNode" && (n as any).op === "^") {
+          const [base, power] = (n as any).args as AnyNode[];
+          if (constantValue(power.toString()) === 1) return base;
+        }
+        return n;
+      })
+      .toString();
+    return withoutUnits === simplified
+      ? simplified
+      : exactSimplify(withoutUnits);
+  } catch {
+    return simplified;
+  }
 }
 
 function derivativeExpr(expr: string, ctx: IntegrationContext): string {
@@ -375,7 +417,9 @@ function maybeParenthesize(expr: string): string {
   const s = expr.trim();
   if (/^[A-Za-z0-9_.]+$/.test(s)) return s;
   if (new RegExp(`^[${GREEK_LOWER}]+$`).test(s)) return s;
-  if (/^[A-Za-z]+\(.+\)$/.test(s)) return s;
+  const open = s.indexOf("(");
+  if (/^[A-Za-z]+\(/.test(s) && findMatchingParen(s, open) === s.length - 1)
+    return s;
   return `(${s})`;
 }
 
@@ -409,6 +453,175 @@ function divideExpr(a: string, b: string): string {
 
 function addOneToExponent(exp: string): string {
   return simplifyExpr(`(${exp})+1`);
+}
+
+function freshSubstitutionVariable(ctx: IntegrationContext): string {
+  const used = new Set([ctx.variable, ...(ctx.reservedVariables ?? [])]);
+  return (
+    ["u", "v", "w", "z", "r", "s", "t"].find(name => !used.has(name)) ??
+    `u_${ctx.depth}`
+  );
+}
+
+/** A successful substitution is just another integrator call, not a new budget. */
+function integrateSubstitution(
+  original: string,
+  inner: string,
+  du: string,
+  transformed: string,
+  variable: string,
+  ctx: IntegrationContext,
+  setup: string[] = []
+): Integrated {
+  const childCtx: IntegrationContext = {
+    ...ctx,
+    variable,
+    depth: ctx.depth + 1,
+    reservedVariables: [...(ctx.reservedVariables ?? []), ctx.variable],
+  };
+  const child = integrateNode(parse(transformed), childCtx);
+  let back = substituteVariable(child.expr, variable, `(${inner})`);
+  const innerNode = unwrapNode(parse(inner));
+  if (isNaturalLogNode(innerNode)) {
+    // e^(ln g)=g on the real logarithm domain; keep existing mixed answers tidy.
+    back = (parse(back) as any)
+      .transform((raw: AnyNode) => {
+        const n = unwrapNode(raw);
+        if (
+          functionName(n) === "exp" &&
+          simplifyExpr(functionArg(n)!.toString()) === simplifyExpr(inner)
+        )
+          return functionArg(innerNode)!;
+        return raw;
+      })
+      .toString();
+  }
+  const result = simplifyExpr(back);
+  const uv = variableLatex(variable);
+  return {
+    expr: result,
+    partsCost: child.partsCost,
+    method: `substitution + ${child.method}`,
+    methodZh: `代換法 + ${child.methodZh}`,
+    steps: [
+      `${uv}=${toLatex(inner)},\\quad d${uv}=${toLatex(du)}\\,${dVar(ctx)}`,
+      ...setup,
+      `${intLatex(original, ctx)}=${intLatex(transformed, childCtx)}`,
+      ...child.steps,
+      `\\text{Substitute back: }${uv}=${toLatex(inner)}`,
+      `${intLatex(original, ctx)}=${toLatex(result)}+C`,
+    ],
+  };
+}
+
+/**
+ * Recognise f(g(x)) g'(x) by exact cancellation, then reuse every existing
+ * technique on f(u). Integer-power compression also recognises x^4=(x^2)^2
+ * without inverting g or assuming x>0. No sample-point equality authorises a
+ * substitution; both the transformed expression and its pullback are checked.
+ */
+function tryComposedSubstitution(
+  node: AnyNode,
+  ctx: IntegrationContext
+): Integrated | null {
+  if (ctx.depth >= 8) return null;
+  const original = node.toString();
+  const candidates = new Set<string>();
+  const add = (text: string) => {
+    if (candidates.size >= 24) return;
+    try {
+      const canonical = simplifyExpr(text);
+      if (hasVariable(canonical, ctx) && !affineDerivative(canonical, ctx))
+        candidates.add(canonical);
+    } catch {
+      /* An unsupported derivative is not a substitution candidate. */
+    }
+  };
+  node.traverse((raw: AnyNode) => {
+    const n = unwrapNode(raw);
+    if (n.type === "FunctionNode") {
+      const arg = functionArg(n);
+      if (arg) add(arg.toString());
+      add(n.toString());
+    }
+    if (n.type === "OperatorNode" && (n as any).op === "^") {
+      const [rawBase, power] = (n as any).args as AnyNode[];
+      const base = unwrapNode(rawBase);
+      const exponent = constantValue(power.toString(), ctx);
+      add(base.toString());
+      if (
+        hasVariable(base.toString(), ctx) &&
+        exponent !== null &&
+        Number.isInteger(exponent) &&
+        exponent >= 2 &&
+        exponent <= 16
+      ) {
+        // Prefer the largest proper divisor: less nesting, with no branch choices.
+        for (let k = (exponent / 2) | 0; k >= 2; k--)
+          if (exponent % k === 0) add(`(${base.toString()})^${k}`);
+        add(n.toString());
+      }
+    }
+  });
+  const variable = freshSubstitutionVariable(ctx);
+  for (const inner of Array.from(candidates)) {
+    try {
+      const du = derivativeExpr(inner, ctx);
+      if (simplifyExpr(du) === "0") continue;
+      const quotient = simplifyExpr(`(${original})/(${du})`);
+      const innerNode = unwrapNode(parse(inner)) as any;
+      const powerBase =
+        innerNode.type === "OperatorNode" && innerNode.op === "^"
+          ? simplifyExpr(innerNode.args[0].toString())
+          : null;
+      const degree =
+        powerBase === null
+          ? null
+          : constantValue(innerNode.args[1].toString(), ctx);
+      const transformed = simplifyExpr(
+        (parse(quotient) as any)
+          .transform((raw: AnyNode) => {
+            const n = unwrapNode(raw);
+            if (simplifyExpr(n.toString()) === inner) return parse(variable);
+            if (
+              degree !== null &&
+              Number.isInteger(degree) &&
+              degree >= 2 &&
+              n.type === "OperatorNode" &&
+              (n as any).op === "^"
+            ) {
+              const [base, power] = (n as any).args as AnyNode[];
+              const exponent = constantValue(power.toString(), ctx);
+              if (
+                simplifyExpr(base.toString()) === powerBase &&
+                exponent !== null &&
+                Number.isInteger(exponent) &&
+                exponent % degree === 0
+              )
+                return parse(`${variable}^(${exponent / degree})`);
+            }
+            return raw;
+          })
+          .toString()
+      );
+      if (hasVariable(transformed, ctx)) continue;
+      const vars = collectVariables(parse(transformed));
+      if (Array.from(vars).some(name => name !== variable)) continue;
+      const pullback = substituteVariable(transformed, variable, `(${inner})`);
+      if (simplifyExpr(`(${pullback})*(${du})-(${original})`) !== "0") continue;
+      return integrateSubstitution(
+        original,
+        inner,
+        du,
+        transformed,
+        variable,
+        ctx
+      );
+    } catch {
+      /* Speculative strategies must not consume the parts budget. */
+    }
+  }
+  return null;
 }
 
 function affineDerivative(
@@ -749,6 +962,7 @@ function tryRationalLongDivision(
     remainderIntegral = integrateNode(parse(remainderQuotient), {
       ...ctx,
       depth: ctx.depth + 1,
+      partsUsed: (ctx.partsUsed ?? 0) + (quotientIntegral.partsCost ?? 0),
     });
   } catch {
     return null;
@@ -760,8 +974,8 @@ function tryRationalLongDivision(
     expr: result,
     partsCost:
       (quotientIntegral.partsCost ?? 0) + (remainderIntegral.partsCost ?? 0),
-    method: "rational function long division + remainder integration",
-    methodZh: "有理函數多項式長除法 + 餘式積分",
+    method: `rational function long division + ${quotientIntegral.method} + ${remainderIntegral.method}`,
+    methodZh: `有理函數多項式長除法 + ${quotientIntegral.methodZh} + ${remainderIntegral.methodZh}`,
     steps: [
       `${toLatex(numerator)}\\div ${toLatex(denominator)}=${toLatex(quotientExpr)}+\\frac{${toLatex(remainderExpr)}}{${toLatex(denominatorExpr)}}`,
       `${intLatex(`(${numerator})/(${denominator})`, ctx)}=${intLatex(quotientExpr, ctx)}+${intLatex(remainderQuotient, ctx)}`,
@@ -816,6 +1030,10 @@ function tryRepeatedByPartsExpTrig(
   const E = toLatex(`exp(${A})`);
   const T = toLatex(`${sine ? "sin" : "cos"}(${B})`);
   const U = toLatex(`${sine ? "cos" : "sin"}(${B})`);
+  const p = [ctx.variable, ...(ctx.reservedVariables ?? [])].includes("u")
+    ? "p"
+    : "u";
+  const q = p === "p" ? "q" : "v";
   return {
     expr: result,
     partsCost: 2,
@@ -823,9 +1041,11 @@ function tryRepeatedByPartsExpTrig(
     methodZh: "兩次分部積分並移項解循環",
     steps: [
       `I=${intLatex(combineFactors(factors), ctx)}`,
-      `u=${T},\\quad dv=${E}\\,${dVar(ctx)},\\quad v=\\frac{${E}}{${toLatex(a)}}`,
+      `${p}=${T},\\quad d${q}=${E}\\,${dVar(ctx)},\\quad ${q}=\\frac{${E}}{${toLatex(a)}}`,
+      `d${p}=${sine ? "" : "-"}${toLatex(b)}${U}\\,${dVar(ctx)},\\quad \\int ${p}\\,d${q}=${p}${q}-\\int ${q}\\,d${p}`,
       `I=\\frac{${E}${T}}{${toLatex(a)}}${sine ? "-" : "+"}\\frac{${toLatex(b)}}{${toLatex(a)}}J`,
       `J=${intLatex(`exp(${A})*${sine ? "cos" : "sin"}(${B})`, ctx)}`,
+      `${p}=${U},\\quad d${q}=${E}\\,${dVar(ctx)},\\quad d${p}=${sine ? "-" : ""}${toLatex(b)}${T}\\,${dVar(ctx)},\\quad ${q}=\\frac{${E}}{${toLatex(a)}}`,
       `J=\\frac{${E}${U}}{${toLatex(a)}}${sine ? "+" : "-"}\\frac{${toLatex(b)}}{${toLatex(a)}}I`,
       `\\left(1+\\frac{${toLatex(b)}^2}{${toLatex(a)}^2}\\right)I=\\frac{${E}${T}}{${toLatex(a)}}${sine ? "-" : "+"}\\frac{${toLatex(b)}${E}${U}}{${toLatex(a)}^2}`,
       `${intLatex(combineFactors(factors), ctx)}=${toLatex(result)}+C`,
@@ -933,27 +1153,21 @@ function tryTrigLogSubstitution(
     return null;
   const v = ctx.variable;
   const vl = variableLatex(v);
-  const uLatex = `\\ln ${vl}`;
-  const trigExpr = `${fn}(log(${v}))`;
-  const result =
-    fn === "sin"
-      ? simplifyExpr(`${v}*(sin(log(${v}))-cos(log(${v})))/2`)
-      : simplifyExpr(`${v}*(sin(log(${v}))+cos(log(${v})))/2`);
-  const innerExp = fn === "sin" ? "exp(u)*sin(u)" : "exp(u)*cos(u)";
-  const innerResult =
-    fn === "sin" ? "exp(u)*(sin(u)-cos(u))/2" : "exp(u)*(sin(u)+cos(u))/2";
-  return {
-    expr: result,
-    partsCost: 2,
-    method: "substitution followed by repeated integration by parts",
-    methodZh: "代換後連續分部積分",
-    steps: [
-      `u=${uLatex},\\quad ${dVar(ctx)}=${vl}\\,du=e^u\\,du`,
-      `${intLatex(trigExpr, ctx)}=\\int e^u${fn === "sin" ? "\\sin u" : "\\cos u"}\\,du`,
-      `\\text{Now use repeated integration by parts and solve for the original integral: }\\int ${toLatex(innerExp)}\\,du=${toLatex(innerResult)}+C`,
-      `${intLatex(trigExpr, ctx)}=${toLatex(result)}+C`,
-    ],
-  };
+  const u = freshSubstitutionVariable(ctx);
+  const ul = variableLatex(u);
+  try {
+    return integrateSubstitution(
+      `${fn}(log(${v}))`,
+      `log(${v})`,
+      `1/${v}`,
+      `exp(${u})*${fn}(${u})`,
+      u,
+      ctx,
+      [`${vl}=e^{${ul}},\\quad ${dVar(ctx)}=e^{${ul}}\\,d${ul}`]
+    );
+  } catch {
+    return null;
+  }
 }
 
 function tryTrigSqrtSubstitution(
@@ -970,27 +1184,21 @@ function tryTrigSqrtSubstitution(
   const v = ctx.variable;
   const vl = variableLatex(v);
   const sqrtV = `sqrt(${v})`;
-  const sqrtLatex = `\\sqrt{${vl}}`;
-  const trigExpr = `${fn}(${sqrtV})`;
-  const result =
-    fn === "sin"
-      ? simplifyExpr(`2*(sin(${sqrtV})-${sqrtV}*cos(${sqrtV}))`)
-      : simplifyExpr(`2*(${sqrtV}*sin(${sqrtV})+cos(${sqrtV}))`);
-  const transformed = fn === "sin" ? "2*u*sin(u)" : "2*u*cos(u)";
-  const transformedResult =
-    fn === "sin" ? "2*(sin(u)-u*cos(u))" : "2*(u*sin(u)+cos(u))";
-  return {
-    expr: result,
-    partsCost: 1,
-    method: "substitution followed by integration by parts",
-    methodZh: "代換後分部積分",
-    steps: [
-      `u=${sqrtLatex},\\quad ${vl}=u^2,\\quad ${dVar(ctx)}=2u\\,du`,
-      `${intLatex(trigExpr, ctx)}=\\int ${fn === "sin" ? "2u\\sin u" : "2u\\cos u"}\\,du`,
-      `\\text{Use integration by parts on }\\int ${toLatex(transformed)}\\,du=${toLatex(transformedResult)}+C`,
-      `${intLatex(trigExpr, ctx)}=${toLatex(result)}+C`,
-    ],
-  };
+  const u = freshSubstitutionVariable(ctx);
+  const ul = variableLatex(u);
+  try {
+    return integrateSubstitution(
+      `${fn}(${sqrtV})`,
+      sqrtV,
+      `1/(2*${sqrtV})`,
+      `2*${u}*${fn}(${u})`,
+      u,
+      ctx,
+      [`${vl}=${ul}^2,\\quad ${dVar(ctx)}=2${ul}\\,d${ul},\\quad ${ul}\\geq0`]
+    );
+  } catch {
+    return null;
+  }
 }
 
 function tryValidatedMixedFunctionTechnique(
@@ -1087,8 +1295,8 @@ function tryTrigIdentities(
     return {
       expr: inner.expr,
       partsCost: inner.partsCost,
-      method: "trigonometric identities then direct integration",
-      methodZh: "三角恆等式變形後直接積分",
+      method: `trigonometric identities + ${inner.method}`,
+      methodZh: `三角恆等式 + ${inner.methodZh}`,
       steps: [
         identity,
         `${intLatex(node.toString(), ctx)}=${intLatex(rewritten, ctx)}`,
@@ -1115,31 +1323,89 @@ function tryQuadraticRational(
   const shift = rationalNumberString(b / (2 * a));
   const z = simplifyExpr(`${ctx.variable}+(${shift})`);
   const k = c / a - (b * b) / (4 * a * a);
+  const aExpr = rationalNumberString(a);
+  const kExpr = rationalNumberString(k);
+  const betaExpr = rationalNumberString(beta);
+  if (betaExpr === "0") {
+    const coefficient = rationalNumberString(alpha);
+    const dq = derivativeExpr(denominator, ctx);
+    const result = multiplyExpr(coefficient, `log(abs(${denominator}))`);
+    return {
+      expr: result,
+      partsCost: 0,
+      method: "reverse chain logarithmic rule",
+      methodZh: "反鏈式對數法則",
+      steps: [
+        `${variableLatex(freshSubstitutionVariable(ctx))}=${toLatex(denominator)},\\quad d${variableLatex(freshSubstitutionVariable(ctx))}=${toLatex(dq)}\\,${dVar(ctx)}`,
+        `${intLatex(`(${numerator})/(${denominator})`, ctx)}=${toLatex(coefficient)}${intLatex(`(${dq})/(${denominator})`, ctx)}`,
+        `${intLatex(`(${numerator})/(${denominator})`, ctx)}=${toLatex(result)}+C`,
+      ],
+    };
+  }
+  const shifted = shift !== "0";
+  const zv = shifted ? freshSubstitutionVariable(ctx) : ctx.variable;
+  const zl = variableLatex(zv);
+  const zCtx = { ...ctx, variable: zv };
+  const angle = substitutionAngle({
+    ...ctx,
+    reservedVariables: [...(ctx.reservedVariables ?? []), zv],
+  });
+  const theta = variableLatex(angle);
+  const coreIntegral = intLatex(
+    `(${betaExpr})/((${aExpr})*(${zv}^2+(${kExpr})))`,
+    zCtx
+  );
+  const steps = [
+    `${toLatex(denominator)}=${toLatex(`${aExpr}*((${z})^2+(${kExpr}))`)}`,
+    ...(shifted ? [`${zl}=${toLatex(z)},\\quad d${zl}=${dVar(ctx)}`] : []),
+    ...(rationalNumberString(alpha) === "0"
+      ? []
+      : [
+          `${toLatex(`(${numerator})/(${denominator})`)}=${toLatex(`(${rationalNumberString(alpha)})*(${derivativeExpr(denominator, ctx)})/(${denominator})+(${betaExpr})/(${denominator})`)}`,
+          `${intLatex(`(${rationalNumberString(alpha)})*(${derivativeExpr(denominator, ctx)})/(${denominator})`, ctx)}=${toLatex(multiplyExpr(rationalNumberString(alpha), `log(abs(${denominator}))`))}+C`,
+        ]),
+  ];
   let primitive: string;
-  let substitution: string;
   if (Math.abs(k) < 1e-10) {
-    primitive = `-1/((${rationalNumberString(a)})*(${z}))`;
-    substitution = `u=${toLatex(z)}`;
+    primitive = `-1/((${aExpr})*(${z}))`;
+    steps.push(
+      `${coreIntegral}=${toLatex(`-(${betaExpr})/((${aExpr})*${zv})`)}+C`
+    );
   } else if (k > 0) {
     const scale = exactSqrtExpr(k);
-    primitive = `atan((${z})/(${scale}))/((${rationalNumberString(a)})*(${scale}))`;
-    substitution = `${toLatex(z)}=${toLatex(scale)}\\tan\\theta`;
+    const sl = toLatex(scale);
+    const coefficient = simplifyExpr(`(${betaExpr})/((${aExpr})*(${scale}))`);
+    primitive = `atan((${z})/(${scale}))/((${aExpr})*(${scale}))`;
+    steps.push(
+      `${zl}=${sl}\\tan${theta},\\quad d${zl}=${sl}\\sec^2${theta}\\,d${theta},\\quad -\\frac{\\pi}{2}<${theta}<\\frac{\\pi}{2}`,
+      `${toLatex(`${zv}^2+(${kExpr})`)}=${toLatex(kExpr)}\\sec^2${theta}`,
+      `${coreIntegral}=\\int\\frac{${toLatex(betaExpr)}\\cdot${sl}\\sec^2${theta}}{${toLatex(aExpr)}\\cdot${toLatex(kExpr)}\\sec^2${theta}}\\,d${theta}=${toLatex(coefficient)}\\int 1\\,d${theta}`,
+      `${coreIntegral}=${toLatex(coefficient)}${theta}+C`,
+      `${theta}=\\tan^{-1}\\left(\\frac{${zl}}{${sl}}\\right)`
+    );
   } else {
     const scale = exactSqrtExpr(-k);
-    primitive = `log(abs(((${z})-(${scale}))/((${z})+(${scale}))))/(2*(${rationalNumberString(a)})*(${scale}))`;
-    substitution = `\\frac{1}{u^2-s^2}=\\frac{1}{2s}\\left(\\frac{1}{u-s}-\\frac{1}{u+s}\\right)`;
+    const sl = toLatex(scale);
+    primitive = `log(abs(((${z})-(${scale}))/((${z})+(${scale}))))/(2*(${aExpr})*(${scale}))`;
+    steps.push(
+      `\\frac{1}{${zl}^2-${toLatex(rationalNumberString(-k))}}=\\frac{1}{2\\cdot${sl}}\\left(\\frac{1}{${zl}-${sl}}-\\frac{1}{${zl}+${sl}}\\right)`,
+      `${coreIntegral}=${toLatex(`(${betaExpr})*log(abs((${zv}-(${scale}))/(${zv}+(${scale}))))/(2*(${aExpr})*(${scale}))`)}+C`
+    );
   }
   const result = simplifyExpr(
     `(${rationalNumberString(alpha)})*log(abs(${denominator}))+(${rationalNumberString(beta)})*(${primitive})`
   );
   return {
     expr: result,
-    method: "quadratic decomposition and substitution",
-    methodZh: "二次式分拆及代換",
+    partsCost: 0,
+    method:
+      k > 0
+        ? "quadratic decomposition + trigonometric substitution"
+        : "quadratic decomposition and substitution",
+    methodZh: k > 0 ? "二次式分拆 + 三角代換法" : "二次式分拆及代換",
     steps: [
-      `${toLatex(denominator)}=${toLatex(`${rationalNumberString(a)}*((${z})^2+(${rationalNumberString(k)}))`)}`,
-      `u=${toLatex(z)},\\quad du=${dVar(ctx)}`,
-      substitution,
+      ...steps,
+      ...(shifted ? [`\\text{Substitute back: }${zl}=${toLatex(z)}`] : []),
       `${intLatex(`(${numerator})/(${denominator})`, ctx)}=${toLatex(result)}+C`,
     ],
   };
@@ -1167,17 +1433,19 @@ function trySquareRootQuadratic(
     ? `asin((${z})/(${radius}))`
     : `((${z})*sqrt((${rationalNumberString(radius2)})-(${z})^2)+(${rationalNumberString(radius2)})*asin((${z})/(${radius})))/2`;
   const result = multiplyExpr(coefficient, core);
+  const theta = variableLatex(substitutionAngle(ctx));
   return {
     expr: result,
     method: "trigonometric substitution",
     methodZh: "三角代換法",
     steps: [
-      `${toLatex(z)}=${toLatex(radius)}\\sin\\theta,\\quad ${dVar(ctx)}=${toLatex(radius)}\\cos\\theta\\,d\\theta`,
-      `\\sqrt{${toLatex(inner)}}=${toLatex(multiplyExpr(scale, radius))}\\cos\\theta`,
+      `${toLatex(z)}=${toLatex(radius)}\\sin${theta},\\quad ${dVar(ctx)}=${toLatex(radius)}\\cos${theta}\\,d${theta}`,
+      `-\\frac{\\pi}{2}\\leq${theta}\\leq\\frac{\\pi}{2},\\quad \\cos${theta}\\geq0`,
+      `\\sqrt{${toLatex(inner)}}=${toLatex(multiplyExpr(scale, radius))}\\cos${theta}`,
       reciprocal
-        ? `\\int ${toLatex(coefficient)}\\,d\\theta=${toLatex(coefficient)}\\theta+C`
-        : `\\cos^2\\theta=\\frac{1+\\cos2\\theta}{2}`,
-      `\\theta=\\sin^{-1}\\left(\\frac{${toLatex(z)}}{${toLatex(radius)}}\\right)`,
+        ? `\\int ${toLatex(coefficient)}\\,d${theta}=${toLatex(coefficient)}${theta}+C`
+        : `\\cos^2${theta}=\\frac{1+\\cos2${theta}}{2}`,
+      `${theta}=\\sin^{-1}\\left(\\frac{${toLatex(z)}}{${toLatex(radius)}}\\right)`,
       `${intLatex(reciprocal ? `(${multiplier})/sqrt(${inner})` : `(${multiplier})*sqrt(${inner})`, ctx)}=${toLatex(result)}+C`,
     ],
   };
@@ -1200,8 +1468,6 @@ function integrateNode(node: AnyNode, ctx: IntegrationContext): Integrated {
 function integrateNodeImpl(node: AnyNode, ctx: IntegrationContext): Integrated {
   node = unwrapNode(node);
   const text = node.toString();
-  const identities = tryTrigIdentities(node, ctx);
-  if (identities) return identities;
 
   if (ctx.depth > 10) {
     throw new UnsupportedIntegral(
@@ -1209,6 +1475,8 @@ function integrateNodeImpl(node: AnyNode, ctx: IntegrationContext): Integrated {
       "此題的遞迴計算過長，暫未能安全處理。"
     );
   }
+  const identities = tryTrigIdentities(node, ctx);
+  if (identities) return identities;
 
   if (!hasVariable(text, ctx)) {
     return {
@@ -1263,8 +1531,8 @@ function integrateNodeImpl(node: AnyNode, ctx: IntegrationContext): Integrated {
       return {
         expr: simplifyExpr(`(${left.expr})+(${right.expr})`),
         partsCost: (left.partsCost ?? 0) + (right.partsCost ?? 0),
-        method: "linearity",
-        methodZh: "線性法則",
+        method: `linearity + ${left.method} + ${right.method}`,
+        methodZh: `線性法則 + ${left.methodZh} + ${right.methodZh}`,
         steps: [
           `${intLatex(`(${args[0].toString()})+(${args[1].toString()})`, ctx)}`,
           ...left.steps,
@@ -1282,8 +1550,8 @@ function integrateNodeImpl(node: AnyNode, ctx: IntegrationContext): Integrated {
       return {
         expr: simplifyExpr(`(${left.expr})-(${right.expr})`),
         partsCost: (left.partsCost ?? 0) + (right.partsCost ?? 0),
-        method: "linearity",
-        methodZh: "線性法則",
+        method: `linearity + ${left.method} + ${right.method}`,
+        methodZh: `線性法則 + ${left.methodZh} + ${right.methodZh}`,
         steps: [
           `${intLatex(`(${args[0].toString()})-(${args[1].toString()})`, ctx)}`,
           ...left.steps,
@@ -1509,6 +1777,39 @@ function integrateNodeImpl(node: AnyNode, ctx: IntegrationContext): Integrated {
           }
         }
       }
+      const trigBase = unwrapNode(args[0]);
+      if (
+        expVal === 3 &&
+        isFunctionNode(trigBase, "sec") &&
+        (ctx.partsUsed ?? 0) < 2
+      ) {
+        const inner = functionArg(trigBase)!.toString();
+        const d = affineDerivative(inner, ctx);
+        if (d) {
+          const S = toLatex(`sec(${inner})`);
+          const T = toLatex(`tan(${inner})`);
+          const coefficient = simplifyExpr(`1/(${d})`);
+          const result = simplifyExpr(
+            `(sec(${inner})*tan(${inner})+log(abs(sec(${inner})+tan(${inner}))))/(2*(${d}))`
+          );
+          return {
+            expr: result,
+            partsCost: 1,
+            method: "integration by parts and secant identity",
+            methodZh: "分部積分法及正割恆等式",
+            steps: [
+              `I=${intLatex(text, ctx)}`,
+              `p=${S},\\quad dq=${S}^2\\,${dVar(ctx)},\\quad dp=${toLatex(d)}${S}${T}\\,${dVar(ctx)},\\quad q=${toLatex(coefficient)}${T}`,
+              `\\int p\\,dq=pq-\\int q\\,dp`,
+              `I=${toLatex(coefficient)}${S}${T}-${intLatex(`sec(${inner})*tan(${inner})^2`, ctx)}`,
+              `${T}^2=${S}^2-1`,
+              `I=${toLatex(coefficient)}${S}${T}-I+${intLatex(`sec(${inner})`, ctx)}`,
+              `2I=${toLatex(coefficient)}${S}${T}+${toLatex(coefficient)}\\ln\\left|${S}+${T}\\right|`,
+              `${intLatex(text, ctx)}=${toLatex(result)}+C`,
+            ],
+          };
+        }
+      }
     }
   }
 
@@ -1573,22 +1874,20 @@ function integrateNodeImpl(node: AnyNode, ctx: IntegrationContext): Integrated {
           };
         if (fn === "log" && (ctx.partsUsed ?? 0) < 2) {
           const base = logBase(node)!;
-          const factor = base === "e" ? "1" : `log(${base})`;
-          const result = divideExpr(
-            `(${inner})*log(${inner})-(${inner})`,
-            `(${d})*(${factor})`
-          );
-          return {
-            expr: result,
-            partsCost: 1,
-            method: "affine substitution then integration by parts",
-            methodZh: "一次式代換後分部積分",
-            steps: [
-              `u=${toLatex(inner)},\\quad du=${toLatex(d)}\\,${dVar(ctx)}`,
-              `\\int\\ln u\\,du=u\\ln u-u+C`,
-              `${intLatex(text, ctx)}=${toLatex(result)}+C`,
-            ],
-          };
+          if (simplifyExpr(inner) === ctx.variable) {
+            const parts = tryByParts([node, parse("1")], ctx);
+            if (parts) return parts;
+          } else {
+            const u = freshSubstitutionVariable(ctx);
+            return integrateSubstitution(
+              text,
+              inner,
+              d,
+              `log(${u}${base === "e" ? "" : `,${base}`})/(${d})`,
+              u,
+              ctx
+            );
+          }
         }
         if (fn === "cot") {
           const result = divideExpr(`log(abs(sin(${inner})))`, d);
@@ -1619,10 +1918,12 @@ function integrateNodeImpl(node: AnyNode, ctx: IntegrationContext): Integrated {
 
   const trigSub = tryTrigSubstitution(node, ctx);
   if (trigSub) return trigSub;
+  const composed = tryComposedSubstitution(node, ctx);
+  if (composed) return composed;
 
   throw new UnsupportedIntegral(
-    "The implemented DSE M2 methods cannot safely solve this expression yet; this does not necessarily mean the question is outside the syllabus. Integration by parts is limited to two uses. Try expanding brackets, splitting terms, rewriting radicals as powers, specifying a single variable, or checking whether the integrand needs integration by parts or a listed trigonometric substitution.",
-    "此式暫未能以已實作的 DSE M2 方法安全求解（不代表題目一定超綱）。分部積分最多使用兩次。可嘗試先展開括號、拆項、把根號改寫成冪次、使用單一積分變數，或檢查是否需要分部積分或表內三角代換。"
+    "The implemented DSE M2 methods cannot safely solve this expression yet; this does not necessarily mean it is outside the syllabus. Supported substitution, trigonometric substitution, identities, algebra and integration by parts may be combined. The whole derivation has a shared limit of two integrations by parts, including after substitutions, splitting terms and changing variables. Try expanding brackets, rewriting radicals as powers or using a single variable; trigonometric substitutions use a sin(theta), a cos(theta) or a tan(theta), not hyperbolic functions.",
+    "此式暫未能以已實作的 DSE M2 方法安全求解（不代表題目一定超綱）。已支援的代換、三角代換、恆等式、代數及分部積分可組合使用；整條推導分部積分累計最多兩次，代換、拆項或改變子變數後不會重設。可嘗試展開括號、把根號改寫成冪次或使用單一變數；三角代換只用 a sinθ、a cosθ 或 a tanθ，不用雙曲代換。"
   );
 }
 
@@ -1824,6 +2125,11 @@ function tryByParts(
   if (factors.length < 2 || ctx.depth > 7 || (ctx.partsUsed ?? 0) >= 2)
     return null;
 
+  const shadowed = [ctx.variable, ...(ctx.reservedVariables ?? [])].some(
+    name => name === "u" || name === "v"
+  );
+  const p = shadowed ? "p" : "u";
+  const q = shadowed ? "q" : "v";
   const logIndex = factors.findIndex(factor =>
     isFixedBaseLogOfVariable(factor, ctx)
   );
@@ -1858,8 +2164,9 @@ function tryByParts(
         methodZh,
         steps: [
           ...setup,
-          `u=${logLatex},\\quad dv=${toLatex(dvExpr)}\\,${dVar(ctx)}`,
-          `du=${duLatex}\\,${dVar(ctx)},\\quad v=\\frac{${vl}^{${denom}}}{${denom}}`,
+          `${p}=${logLatex},\\quad d${q}=${toLatex(dvExpr)}\\,${dVar(ctx)}`,
+          `d${p}=${duLatex}\\,${dVar(ctx)},\\quad ${q}=\\frac{${vl}^{${denom}}}{${denom}}`,
+          `\\int ${p}\\,d${q}=${p}${q}-\\int ${q}\\,d${p}`,
           `${intLatex(combineFactors(factors), ctx)}=\\frac{${vl}^{${denom}}}{${denom}}${logLatex}-${intLatex(isNatural ? `(${ctx.variable}^${denom}/${denom})/${ctx.variable}` : `(${ctx.variable}^${denom}/${denom})/(${ctx.variable}*log(${base}))`, ctx)}`,
           `${intLatex(combineFactors(factors), ctx)}=${toLatex(result)}+C`,
         ],
@@ -1903,13 +2210,14 @@ function tryByParts(
         expr: result,
         partsCost:
           1 + (vIntegral.partsCost ?? 0) + (remainingIntegral.partsCost ?? 0),
-        method: "integration by parts",
-        methodZh: "分部積分法",
+        method: `integration by parts + ${vIntegral.method} + ${remainingIntegral.method}`,
+        methodZh: `分部積分法 + ${vIntegral.methodZh} + ${remainingIntegral.methodZh}`,
         steps: [
           ...vIntegral.steps,
-          `u=${toLatex(u)},\\quad dv=${toLatex(dvExpr)}\\,${dVar(ctx)}`,
-          `du=${toLatex(du)}\\,${dVar(ctx)},\\quad v=${toLatex(vExpr)}`,
-          `${intLatex(combineFactors(factors), ctx)}=${toLatex(u)}${toLatex(vExpr)}-${intLatex(remainingIntegrand, ctx)}`,
+          `${p}=${toLatex(u)},\\quad d${q}=${toLatex(dvExpr)}\\,${dVar(ctx)}`,
+          `d${p}=${toLatex(du)}\\,${dVar(ctx)},\\quad ${q}=${toLatex(vExpr)}`,
+          `\\int ${p}\\,d${q}=${p}${q}-\\int ${q}\\,d${p}`,
+          `${intLatex(combineFactors(factors), ctx)}=${toLatex(`(${u})*(${vExpr})`)}-${intLatex(remainingIntegrand, ctx)}`,
           ...remainingIntegral.steps,
           `${intLatex(combineFactors(factors), ctx)}=${toLatex(result)}+C`,
         ],
@@ -1978,7 +2286,13 @@ function exactSqrtLatex(n: number): string {
 }
 
 function substitutionAngle(ctx: IntegrationContext): string {
-  return ctx.variable === "θ" || ctx.variable === "theta" ? "φ" : "θ";
+  const used = [ctx.variable, ...(ctx.reservedVariables ?? [])].map(
+    variableLatex
+  );
+  return (
+    ["θ", "φ", "α", "β"].find(name => !used.includes(variableLatex(name))) ??
+    "θ"
+  );
 }
 
 function tryTrigSubstitution(
@@ -2088,20 +2402,37 @@ function tryTrigSubstitution(
     if (a2Plus !== null) {
       const a = exactSqrtExpr(a2Plus);
       const aLatex = toLatex(a);
+      let transformed: Integrated;
+      try {
+        transformed = integrateNode(
+          parse(`(${rationalNumberString(a2Plus)})*sec(${angle})^3`),
+          {
+            ...ctx,
+            variable: angle,
+            depth: ctx.depth + 1,
+            reservedVariables: [...(ctx.reservedVariables ?? []), ctx.variable],
+          }
+        );
+      } catch {
+        return null;
+      }
       const result = simplifyExpr(
         `(${v})*sqrt((${v})^2+${a2Plus})/2+(${a2Plus})*log(abs(${v}+sqrt((${v})^2+${a2Plus})))/2`
       );
       return {
         expr: result,
-        partsCost: 1,
-        method: "trigonometric substitution",
-        methodZh: "三角代換法",
+        partsCost: transformed.partsCost,
+        method: `trigonometric substitution + ${transformed.method}`,
+        methodZh: `三角代換法 + ${transformed.methodZh}`,
         steps: [
           `${vl}=${aLatex}\\tan ${angleLatex},\\quad ${dVar(ctx)}=${aLatex}\\sec^2 ${angleLatex}\\,d${angleLatex}`,
+          `-\\frac{\\pi}{2}<${angleLatex}<\\frac{\\pi}{2},\\quad \\sec${angleLatex}>0`,
           `\\sqrt{${toLatex(`${a2Plus}+(${v})^2`)}}=${aLatex}\\sec ${angleLatex}`,
           `${intLatex(expr, ctx)}=\\int ${toLatex(String(a2Plus))}\\sec^3 ${angleLatex}\\,d${angleLatex}`,
-          `\\int\\sec^3 ${angleLatex}\\,d${angleLatex}=\\frac{1}{2}\\sec ${angleLatex}\\tan ${angleLatex}+\\frac{1}{2}\\ln|\\sec ${angleLatex}+\\tan ${angleLatex}|`,
-          `${angleLatex}=\\tan^{-1}\\left(\\frac{${vl}}{${aLatex}}\\right)`,
+          ...transformed.steps,
+          `${angleLatex}=\\tan^{-1}\\left(\\frac{${vl}}{${aLatex}}\\right),\\quad \\tan${angleLatex}=\\frac{${vl}}{${aLatex}},\\quad \\sec${angleLatex}=\\frac{\\sqrt{${toLatex(sqrtInner)}}}{${aLatex}}`,
+          `\\ln\\left|\\sec${angleLatex}+\\tan${angleLatex}\\right|=\\ln\\left|${vl}+\\sqrt{${toLatex(sqrtInner)}}\\right|-\\ln\\left(${aLatex}\\right)`,
+          `\\text{The constant term is absorbed into }C`,
           `${intLatex(expr, ctx)}=${toLatex(result)}+C`,
         ],
       };
@@ -2194,6 +2525,7 @@ export function calculateIntegral(
       antiderivative: simplifiedAnswer,
       method: integrated.method,
       methodZh: integrated.methodZh,
+      partsCost: integrated.partsCost ?? 0,
       stepsLatex: integrated.steps,
       variable: detected,
       variableLatex: variableLatex(detected),
@@ -2270,6 +2602,72 @@ function intervalIssue(
       Math.floor((range[1] - offset) / Math.PI + 1e-10)
     );
   };
+  // Conservative interval bounds certify nonzero composed denominators. Never
+  // infer absence of a pole from a finite grid of samples (x^4-a, exp(x)^2-a).
+  const composedRange = (raw: AnyNode, depth = 0): [number, number] | null => {
+    if (depth > 16) return null;
+    const n = unwrapNode(raw) as any;
+    const text = n.toString();
+    if (!hasVariable(text, ctx)) {
+      const value = constantValue(text, ctx);
+      return value === null ? null : [value, value];
+    }
+    if (n.type === "SymbolNode" && n.name === ctx.variable) return [lo, hi];
+    const exactRange = argumentRange(n);
+    if (exactRange) return exactRange;
+    const args: AnyNode[] = n.args ?? [];
+    const A = args[0] && composedRange(args[0], depth + 1);
+    if (!A) return null;
+    let range: [number, number] | null = null;
+    if (n.type === "FunctionNode") {
+      const fn = functionName(n);
+      if (fn === "exp") range = [Math.exp(A[0]), Math.exp(A[1])];
+      if (fn === "sqrt" && A[0] >= 0)
+        range = [Math.sqrt(A[0]), Math.sqrt(A[1])];
+      if (fn === "abs")
+        range = [
+          A[0] <= 0 && A[1] >= 0 ? 0 : Math.min(Math.abs(A[0]), Math.abs(A[1])),
+          Math.max(Math.abs(A[0]), Math.abs(A[1])),
+        ];
+      if (fn === "sin" || fn === "cos") {
+        const f = fn === "sin" ? Math.sin : Math.cos;
+        const extrema = [f(A[0]), f(A[1])];
+        const offset = fn === "sin" ? Math.PI / 2 : 0;
+        const first = Math.ceil((A[0] - offset) / Math.PI);
+        const last = Math.floor((A[1] - offset) / Math.PI);
+        if (last - first >= 1) extrema.push(-1, 1);
+        else if (first === last) extrema.push(first % 2 === 0 ? 1 : -1);
+        range = [Math.min(...extrema), Math.max(...extrema)];
+      }
+    }
+    if (n.type === "OperatorNode") {
+      if (n.op === "-" && args.length === 1) range = [-A[1], -A[0]];
+      else if (n.op === "^") {
+        const exponent = constantValue(args[1].toString(), ctx);
+        if (exponent !== null && Number.isInteger(exponent) && exponent >= 0) {
+          const ends = [A[0] ** exponent, A[1] ** exponent];
+          range = [
+            exponent > 0 && exponent % 2 === 0 && A[0] <= 0 && A[1] >= 0
+              ? 0
+              : Math.min(...ends),
+            Math.max(...ends),
+          ];
+        }
+      } else {
+        const B = args[1] && composedRange(args[1], depth + 1);
+        if (!B) return null;
+        if (n.op === "+") range = [A[0] + B[0], A[1] + B[1]];
+        if (n.op === "-") range = [A[0] - B[1], A[1] - B[0]];
+        if (n.op === "*" || (n.op === "/" && (B[0] > 0 || B[1] < 0))) {
+          const values = [A[0], A[1]].flatMap(a =>
+            [B[0], B[1]].map(b => (n.op === "*" ? a * b : a / b))
+          );
+          range = [Math.min(...values), Math.max(...values)];
+        }
+      }
+    }
+    return range?.every(Number.isFinite) ? range : null;
+  };
   const containsRoot = (raw: AnyNode): boolean => {
     const n = unwrapNode(raw) as any;
     if (n.type === "FunctionNode") {
@@ -2310,7 +2708,16 @@ function intervalIssue(
         );
       }
     }
-    return false;
+    const range = composedRange(n);
+    if (!range) {
+      issue = "unverified-domain";
+      return false;
+    }
+    if (range[0] > 0 || range[1] < 0) return false;
+    // Interval arithmetic may overestimate; rejecting is safer than claiming
+    // that an unverified interval is regular. It is not an out-of-syllabus claim.
+    issue = "unverified-domain";
+    return true;
   };
   node.traverse((n: any) => {
     if (issue) return;
@@ -2413,6 +2820,7 @@ function tryAbsoluteSymmetry(
       ) < 1e-9
   );
   if (!odd && !even) return null;
+  let partsCost = 0;
   let value = "0",
     steps = [
       `f(-${variableLatex(ctx.variable)})=-f(${variableLatex(ctx.variable)})`,
@@ -2432,6 +2840,7 @@ function tryAbsoluteSymmetry(
       ctx.variable
     );
     if (result.status !== "ok" || !result.valueExpr) return null;
+    partsCost = result.partsCost ?? 0;
     value = multiplyExpr(b > 0 ? "2" : "-2", result.valueExpr);
     steps = [
       `f(-${variableLatex(ctx.variable)})=f(${variableLatex(ctx.variable)})`,
@@ -2451,6 +2860,7 @@ function tryAbsoluteSymmetry(
     status: "ok",
     valueExpr: value,
     valueLatex: toLatex(value),
+    partsCost,
     method: odd ? "odd-function symmetry" : "even-function symmetry",
     methodZh: odd ? "奇函數對稱性" : "偶函數對稱性",
     stepsLatex: steps,
@@ -2546,13 +2956,13 @@ export function calculateDefiniteIntegral(
           issue === "singularity"
             ? "The interval contains a point where the integrand is undefined. Directly subtracting endpoint values is not valid; improper integrals are outside this calculator's DSE M2 scope."
             : issue === "unverified-domain"
-              ? "The calculator cannot yet verify that this nonlinear trigonometric argument avoids every pole on the interval. Please check the domain; this is not an automatic claim that the question is outside the syllabus."
+              ? "The calculator cannot yet certify that this composed denominator or nonlinear trigonometric argument avoids every pole on the interval. Please check the domain; this is not an automatic claim that the question is outside the syllabus."
               : "The integrand is not real and defined throughout this interval. Check logarithm and square-root domains.",
         hintZh:
           issue === "singularity"
             ? "此區間含有被積函數未定義的點，不能直接用上下限相減；瑕積分不在本計算器的 DSE M2 範圍內。"
             : issue === "unverified-domain"
-              ? "計算器暫未能確認此非一次三角內函數在區間內避開所有極點。請先檢查定義域；這不代表題目一定超綱。"
+              ? "計算器暫未能確認此複合分母或非一次三角內函數在區間內避開所有極點。請先檢查定義域；這不代表題目一定超綱。"
               : "被積函數在此區間並非處處為已定義的實數；請檢查對數與根號的定義域。",
       };
     const absoluteSymmetry = tryAbsoluteSymmetry(node, ctx, lower, upper);
@@ -2613,6 +3023,7 @@ export function calculateDefiniteIntegral(
       antiderivativeLatex,
       valueExpr,
       valueLatex,
+      partsCost: indefinite.partsCost ?? 0,
       method: `definite integral using ${indefinite.method}`,
       methodZh: `利用「${indefinite.methodZh}」先求原函數，再代入上下限`,
       stepsLatex,
