@@ -33,7 +33,7 @@ function AppRouter() {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="dark">
+      <ThemeProvider defaultTheme="light">
         <LangProvider>
           <TooltipProvider>
             <Toaster />

@@ -36,14 +36,16 @@ function trimLogFile(logPath: string, maxSize: number) {
       keptBytes += lineBytes;
     }
     fs.writeFileSync(logPath, keptLines.join("\n"), "utf-8");
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 function writeToLogFile(source: LogSource, entries: unknown[]) {
   if (entries.length === 0) return;
   ensureLogDir();
   const logPath = path.join(LOG_DIR, `${source}.log`);
-  const lines = entries.map((entry) => {
+  const lines = entries.map(entry => {
     const ts = new Date().toISOString();
     return `[${ts}] ${JSON.stringify(entry)}`;
   });
@@ -58,34 +60,59 @@ function vitePluginManusDebugCollector(): Plugin {
       if (process.env.NODE_ENV === "production") return html;
       return {
         html,
-        tags: [{ tag: "script", attrs: { src: "/__manus__/debug-collector.js", defer: true }, injectTo: "head" as const }],
+        tags: [
+          {
+            tag: "script",
+            attrs: { src: "/__manus__/debug-collector.js", defer: true },
+            injectTo: "head" as const,
+          },
+        ],
       };
     },
     configureServer(server: ViteDevServer) {
       server.middlewares.use("/__manus__/logs", (req, res, next) => {
         if (req.method !== "POST") return next();
         const handlePayload = (payload: Record<string, unknown[]>) => {
-          if (payload.consoleLogs?.length > 0) writeToLogFile("browserConsole", payload.consoleLogs);
-          if (payload.networkRequests?.length > 0) writeToLogFile("networkRequests", payload.networkRequests);
-          if (payload.sessionEvents?.length > 0) writeToLogFile("sessionReplay", payload.sessionEvents);
+          if (payload.consoleLogs?.length > 0)
+            writeToLogFile("browserConsole", payload.consoleLogs);
+          if (payload.networkRequests?.length > 0)
+            writeToLogFile("networkRequests", payload.networkRequests);
+          if (payload.sessionEvents?.length > 0)
+            writeToLogFile("sessionReplay", payload.sessionEvents);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ success: true }));
         };
         let body = "";
-        req.on("data", (chunk) => { body += chunk.toString(); });
+        req.on("data", chunk => {
+          body += chunk.toString();
+        });
         req.on("end", () => {
-          try { handlePayload(JSON.parse(body)); }
-          catch (e) { res.writeHead(400); res.end(JSON.stringify({ success: false, error: String(e) })); }
+          try {
+            handlePayload(JSON.parse(body));
+          } catch (e) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ success: false, error: String(e) }));
+          }
         });
       });
     },
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+const plugins = [
+  react(),
+  tailwindcss(),
+  jsxLocPlugin(),
+  vitePluginManusRuntime(),
+  vitePluginManusDebugCollector(),
+];
 
 export default defineConfig({
-  base: process.env.VITE_BASE ?? "/integral-calculator-students/",
+  base:
+    process.env.VITE_BASE ??
+    (process.env.NODE_ENV === "production"
+      ? "/integral-calculator-students/"
+      : "/"),
   plugins,
   resolve: {
     alias: {

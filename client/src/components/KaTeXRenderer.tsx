@@ -32,14 +32,19 @@ export default function KaTeXRenderer({
         },
       });
     } catch {
-      return `<span style="color:${errorColor}">${latex}</span>`;
+      return null;
     }
   }, [latex, displayMode, errorColor]);
 
+  if (html === null) {
+    return (
+      <span className={className} style={{ color: errorColor }}>
+        {latex}
+      </span>
+    );
+  }
+
   return (
-    <span
-      className={className}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <span className={className} dangerouslySetInnerHTML={{ __html: html }} />
   );
 }
