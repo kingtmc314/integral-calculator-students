@@ -383,6 +383,7 @@ export function reasoningScenes(result: Calculation): Scene[] {
       ? [...result.indefinite.stepsLatex, ...result.stepsLatex]
       : result.stepsLatex;
   const seen = new Set([integral.trim()]);
+  const namedIntegrals = new Set<string>();
   for (const latex of lines) {
     const key = latex.trim();
     if (!key || seen.has(key)) continue;
@@ -411,7 +412,41 @@ export function reasoningScenes(result: Calculation): Scene[] {
     const fDefinition = definite && /^F\s*(?:\(|\\left\()/.test(latex);
     const fBounds =
       definite && !fDefinition && /F\s*(?:\(|\\left\()/.test(latex);
-    if (fDefinition) {
+    const namedIntegral = latex.match(/^\s*([IJK])\s*=\s*\\int/);
+    const isIntegralDefinition =
+      !!namedIntegral &&
+      !scanLatex(latex).equals.slice(1).length &&
+      /(?:parts|cycle)/.test(source.method);
+    if (isIntegralDefinition) {
+      const name = namedIntegral![1];
+      namedIntegrals.add(name);
+      add(
+        latex,
+        1,
+        [
+          "命名原積分，方便稍後移項",
+          "Name the integral for later rearrangement",
+        ],
+        [
+          `${name} 是本行整個積分的簡稱；先命名，分部後若它再次出現，就可移項解出它。`,
+          `${name} abbreviates the entire integral on this line. Name it first so that repeated occurrences after integration by parts can be collected and solved for.`,
+        ],
+        [
+          [
+            `${name} 不是新的積分變數，也不是已知數值；原積分變數仍是 ${variable}。`,
+            "本步只設定代號，尚未分部或移項，不佔分部積分次數。",
+          ],
+          [
+            `${name} is neither a new integration variable nor a known numerical value; the integration variable remains ${variable}.`,
+            "This step only introduces notation: it has not yet performed integration by parts or rearranged anything, and uses no by-parts allowance.",
+          ],
+        ],
+        [
+          "不要把積分代號與積分變數混淆；命名不是另一條解法。",
+          "Do not confuse the integral's name with its integration variable; naming it is not another method.",
+        ]
+      );
+    } else if (fDefinition) {
       add(
         latex,
         2,
@@ -642,7 +677,7 @@ export function reasoningScenes(result: Calculation): Scene[] {
       const hasC = /\+\s*C\s*$/.test(latex);
       const transformed = hasIntegral && !hasC;
       const cycle =
-        /(?:^|[^a-zA-Z])[IJ](?:=|\b)/.test(latex) &&
+        /(?:^|[^a-zA-Z])[IJK](?:=|\b)/.test(latex) &&
         /parts|cycle/.test(source.method);
       const titles: [string, string] = cycle
         ? [
@@ -683,7 +718,9 @@ export function reasoningScenes(result: Calculation): Scene[] {
         [
           [
             cycle
-              ? "I 是原積分的簡稱，J 是分部後出現的輔助積分；兩者不是新積分變數。"
+              ? namedIntegrals.size
+                ? `${Array.from(namedIntegrals).join("、")} 是本推導已命名的積分，其意義沿用各自的定義行；積分代號不是新的積分變數。`
+                : "I 是原積分的簡稱，J 是分部後出現的輔助積分；兩者不是新積分變數。"
               : hasC
                 ? "C 是任意常數，微分後為零；多項原函數的常數可合併成最後一個 C。"
                 : transformed
@@ -693,7 +730,9 @@ export function reasoningScenes(result: Calculation): Scene[] {
           ],
           [
             cycle
-              ? "I abbreviates the original integral and J an auxiliary integral after integration by parts; neither is a new integration variable."
+              ? namedIntegrals.size
+                ? `${Array.from(namedIntegrals).join(", ")} name integrals in this derivation, with meanings retained from their defining lines; these names are not new integration variables.`
+                : "I abbreviates the original integral and J an auxiliary integral after integration by parts; neither is a new integration variable."
               : hasC
                 ? "C is an arbitrary constant whose derivative is zero; constants from separate terms combine into one final C."
                 : transformed

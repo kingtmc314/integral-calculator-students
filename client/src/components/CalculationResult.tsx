@@ -12,13 +12,17 @@ import { useLang } from "@/contexts/LangContext";
 import { isDefinite, type Calculation } from "@/lib/reasoning";
 import KaTeXRenderer from "./KaTeXRenderer";
 import ReasoningPlayer from "./ReasoningPlayer";
+import SolutionComparison from "./SolutionComparison";
 export default function CalculationResult({
   result,
+  collapsibleReasoning = false,
 }: {
   result: Calculation | null;
+  collapsibleReasoning?: boolean;
 }) {
   const { lang } = useLang();
   const [copied, setCopied] = useState(false);
+  const [pauseId, setPauseId] = useState(0);
   if (!result)
     return (
       <section className="empty-result">
@@ -78,6 +82,18 @@ export default function CalculationResult({
   const equation = definite
     ? `\\int_{${result.lowerLatex}}^{${result.upperLatex}}${result.integrandLatex}\\,d${result.variableLatex ?? "x"}=${answer}`
     : `\\int ${result.integrandLatex}\\,d${result.variableLatex ?? "x"}=${answer}`;
+  const resultKey = JSON.stringify([
+    result.normalized,
+    definite ? result.lower : null,
+    definite ? result.upper : null,
+  ]);
+  const player = (
+    <ReasoningPlayer
+      key={resultKey}
+      result={result}
+      command={{ id: pauseId, action: "pause" }}
+    />
+  );
   return (
     <div className="result-stack">
       <section className="answer-card">
@@ -125,10 +141,23 @@ export default function CalculationResult({
           </p>
         )}
       </section>
-      <ReasoningPlayer
-        key={`${result.normalized}-${definite ? result.lower + result.upper : ""}`}
+      <SolutionComparison
+        key={resultKey}
         result={result}
+        onOpen={() => setPauseId(i => i + 1)}
       />
+      {collapsibleReasoning ? (
+        <details className="compact-reasoning">
+          <summary>
+            {lang === "zh"
+              ? "觀看此題的思考與推導"
+              : "Explore this part’s reasoning"}
+          </summary>
+          {player}
+        </details>
+      ) : (
+        player
+      )}
     </div>
   );
 }

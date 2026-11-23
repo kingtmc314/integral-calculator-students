@@ -6,6 +6,17 @@ import { useLang } from "@/contexts/LangContext";
 import { FORMULAE } from "@/lib/formulaData";
 const EXTRA = [
   {
+    categoryEn: "Integration by parts and mixed methods",
+    categoryZh: "分部積分及混合技巧",
+    titleEn: "Compare different solution paths",
+    titleZh: "不同解法比較",
+    latex: "\\int\\sin^2x\\,dx=\\frac{x}{2}-\\frac{\\sin2x}{4}+C",
+    noteEn:
+      "After calculating, open Compare solution paths. For sin(x)^2, compare a double-angle identity with one use of integration by parts. Other supported examples include x/(x^4+4) and sqrt(4-x^2). Each path has its own steps, hints and by-parts count; if only one verified path exists, the tool says so rather than duplicating it.",
+    noteZh:
+      "計算後按「不同解法比較」。例如 sin(x)^2 可比較倍角恆等式與一次分部積分；另可試 x/(x^4+4) 及 sqrt(4-x^2)。每條路線均有自己的步驟、提示及分部次數。若只有一條已驗證路線，會如實註明，不會複製同一解法。",
+  },
+  {
     categoryEn: "Exponential and trigonometric rules",
     categoryZh: "指數及三角公式",
     titleEn: "Double-angle identities",

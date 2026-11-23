@@ -41,7 +41,24 @@ function HintText({ text }: { text: string }) {
   );
 }
 
-export default function ReasoningPlayer({ result }: { result: Calculation }) {
+export type ReasoningCommand = {
+  id: number;
+  action: "play" | "pause" | "next" | "previous" | "restart" | "stage";
+  stage?: number;
+};
+type Props = {
+  result: Calculation;
+  command?: ReasoningCommand;
+  onPlayingChange?: (playing: boolean) => void;
+  onInteraction?: () => void;
+};
+
+export default function ReasoningPlayer({
+  result,
+  command,
+  onPlayingChange,
+  onInteraction,
+}: Props) {
   const { lang } = useLang();
   const scenes = useMemo(() => reasoningScenes(result), [result]);
   const [index, setIndex] = useState(0);
@@ -81,6 +98,33 @@ export default function ReasoningPlayer({ result }: { result: Calculation }) {
   }, [playing, index, scenes.length, speed, readingTime]);
 
   useEffect(() => {
+    onPlayingChange?.(playing);
+  }, [playing, onPlayingChange]);
+  useEffect(() => {
+    if (!command) return;
+    setInstant(true);
+    if (command.action === "pause") {
+      setPlaying(false);
+      return;
+    }
+    if (command.action === "play") {
+      setTipsOpen(false);
+      setIndex(i => (i === scenes.length - 1 ? 0 : i));
+      setPlaying(true);
+      return;
+    }
+    setPlaying(false);
+    if (command.action === "restart") setIndex(0);
+    if (command.action === "next")
+      setIndex(i => Math.min(i + 1, scenes.length - 1));
+    if (command.action === "previous") setIndex(i => Math.max(i - 1, 0));
+    if (command.action === "stage") {
+      const start = scenes.findIndex(s => s.stage === command.stage);
+      if (start >= 0) setIndex(start);
+    }
+  }, [command?.id]);
+
+  useEffect(() => {
     const hide = () => {
       if (document.hidden) setPlaying(false);
     };
@@ -110,6 +154,7 @@ export default function ReasoningPlayer({ result }: { result: Calculation }) {
     );
   }
   function go(i: number, keyboard = false) {
+    onInteraction?.();
     setPlaying(false);
     setInstant(keyboard);
     setIndex(Math.max(0, Math.min(scenes.length - 1, i)));
@@ -251,6 +296,7 @@ export default function ReasoningPlayer({ result }: { result: Calculation }) {
                 className="step-help-toggle"
                 aria-expanded={tipsOpen}
                 onClick={() => {
+                  onInteraction?.();
                   setTipsOpen(v => !v);
                   setPlaying(false);
                 }}
@@ -402,7 +448,10 @@ export default function ReasoningPlayer({ result }: { result: Calculation }) {
       <details
         className="all-working"
         onToggle={e => {
-          if (e.currentTarget.open) setPlaying(false);
+          if (e.currentTarget.open) {
+            onInteraction?.();
+            setPlaying(false);
+          }
         }}
       >
         <summary>{lang === "zh" ? "查看完整推導" : "View all working"}</summary>

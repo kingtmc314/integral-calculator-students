@@ -6,6 +6,7 @@ export default defineConfig({
       "client/src/lib/integralEngine.test.ts",
       "client/src/lib/exactMath.test.ts",
       "client/src/lib/reasoning.test.ts",
+      "client/src/lib/solutionPaths.test.ts",
     ],
     testTimeout: 20000,
   },

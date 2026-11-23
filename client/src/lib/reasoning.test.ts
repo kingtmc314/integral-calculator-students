@@ -239,6 +239,24 @@ describe("bilingual reasoning metadata from actual engine steps", () => {
     );
     scenes.forEach(assertScene);
   });
+
+  it.each(["I", "J"])("names %s before any by-parts rearrangement", name => {
+    const result = fixture([
+      `${name}=\\int\\sin^2x\\,dx`,
+      `2${name}=x-\\sin x\\cos x`,
+    ]);
+    result.method = "integration by parts";
+    const scenes = reasoningScenes(result);
+    expect(scenes[1].stage).toBe(1);
+    expect(scenes[1].titleEn).toContain("Name the integral");
+    expect(scenes[1].detailsEn.join(" ")).toContain(
+      "has not yet performed integration by parts"
+    );
+    expect(scenes[1].thoughtZh).toContain(`${name} 是`);
+    expect(scenes[2].stage).toBe(2);
+    expect(scenes[2].thoughtEn).toContain("not another integration by parts");
+    scenes.forEach(assertScene);
+  });
 });
 
 describe("balanced focus extraction and duplicate suppression", () => {

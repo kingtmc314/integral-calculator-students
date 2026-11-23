@@ -71,6 +71,20 @@ const EXAMPLES = [
     zh: "兩次分部積分",
     en: "Two uses of parts",
   },
+  {
+    e: "x/(x^4+4)",
+    lo: "0",
+    hi: "sqrt(2)",
+    zh: "比較代換路徑",
+    en: "Compare substitutions",
+  },
+  {
+    e: "sqrt(4-x^2)",
+    lo: "0",
+    hi: "1",
+    zh: "比較 sin／cos 代換",
+    en: "Compare sin / cos routes",
+  },
 ];
 export default function IntegralCalculator({
   definite = false,

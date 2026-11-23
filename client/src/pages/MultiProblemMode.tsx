@@ -11,7 +11,6 @@ import {
 import StudioLayout, { PageHeading } from "@/components/StudioLayout";
 import CalculationResult from "@/components/CalculationResult";
 import KaTeXRenderer from "@/components/KaTeXRenderer";
-import ReasoningPlayer from "@/components/ReasoningPlayer";
 import { previewIntegral } from "@/components/IntegralCalculator";
 import { useLang } from "@/contexts/LangContext";
 import {
@@ -20,7 +19,7 @@ import {
   latexOfExpression,
   type IntegralResult,
 } from "@/lib/integralEngine";
-import { isDefinite, type Calculation } from "@/lib/reasoning";
+import { type Calculation } from "@/lib/reasoning";
 type Part = {
   id: number;
   label: string;
@@ -341,39 +340,12 @@ export default function MultiProblemMode() {
                     {lang === "zh" ? "計算此題" : "Calculate this part"}
                     <ArrowRight size={13} />
                   </button>
-                  {p.result?.status === "ok" ? (
+                  {p.result ? (
                     <div className="mt-5">
-                      <div className="answer-card">
-                        <span className="answer-label">
-                          <CheckCircle2 size={14} />
-                          {lang === "zh" ? "精確答案" : "EXACT ANSWER"}
-                        </span>
-                        <div className="answer-formula">
-                          <KaTeXRenderer
-                            latex={
-                              isDefinite(p.result)
-                                ? (p.result.valueLatex ?? "")
-                                : (p.result.answerLatex ?? "")
-                            }
-                            displayMode
-                          />
-                        </div>
-                      </div>
-                      <details className="mt-3">
-                        <summary className="text-xs cursor-pointer muted py-2">
-                          {lang === "zh"
-                            ? "觀看此題的思考與推導"
-                            : "Explore this part’s reasoning"}
-                        </summary>
-                        <ReasoningPlayer
-                          key={`${p.result.normalized}-${p.lower}-${p.upper}`}
-                          result={p.result}
-                        />
-                      </details>
-                    </div>
-                  ) : p.result ? (
-                    <div className="mt-5">
-                      <CalculationResult result={p.result} />
+                      <CalculationResult
+                        result={p.result}
+                        collapsibleReasoning
+                      />
                     </div>
                   ) : null}
                 </article>
