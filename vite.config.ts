@@ -110,9 +110,7 @@ const plugins = [
 export default defineConfig({
   base:
     process.env.VITE_BASE ??
-    (process.env.NODE_ENV === "production"
-      ? "/integral-calculator-students/"
-      : "/"),
+    (process.env.NODE_ENV === "production" ? "./" : "/"),
   plugins,
   resolve: {
     alias: {
